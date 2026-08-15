@@ -31,11 +31,17 @@ class LightSdkPlugin : Plugin<Project> {
             "org.unifiedpush.android:connector",
             "androidx.core:core-splashscreen",
             "com.thelightphone.lp3keyboard",
+            "com.github.lightphone:light-keyboard",
             "androidx.room",
             "androidx.work",
             "androidx.startup",
             "androidx.media3",
             "io.github.david-allison:anki-android-backend",
+            "org.bouncycastle:bcprov-jdk18on",
+            "com.google.zxing:core",
+            "org.sol4k:sol4k",
+            "org.sol4k:tweetnacl",
+            "org.sol4k:utilities",
         )
 
         val ALLOWED_PLUGINS = setOf(
