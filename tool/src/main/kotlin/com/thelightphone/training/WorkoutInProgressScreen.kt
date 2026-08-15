@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,7 +26,6 @@ import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
-import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
@@ -66,11 +64,8 @@ sealed class WorkoutMode {
     /** Set entry for the exercise currently being built. */
     data object AddExerciseSets : WorkoutMode()
 
-    /** Stepper entry for the rep count of a new set. */
-    data object AddSetReps : WorkoutMode()
-
-    /** Text entry for the weight of a new set (in the user's preferred unit). */
-    data object AddSetWeight : WorkoutMode()
+    /** Combined weight + reps entry for a new set. */
+    data object AddSet : WorkoutMode()
 }
 
 data class WorkoutUiState(
@@ -82,11 +77,13 @@ data class WorkoutUiState(
     val draftExercise: Exercise? = null,
     val draftSets: List<ExerciseSet> = emptyList(),
     val draftReps: Int = DEFAULT_REPS,
+    val draftWeightText: String = "",
     val errorModal: String? = null,
+    // Bumped every time a new add-set flow starts; see AddSetContent's sessionKey parameter.
+    val addSetSession: Long = 0L,
 )
 
 private const val DEFAULT_REPS = 10
-private const val MIN_REPS = 1
 
 class WorkoutInProgressViewModel(
     private val dataStore: DataStore<Preferences>,
@@ -139,29 +136,26 @@ class WorkoutInProgressViewModel(
     }
 
     fun startAddSet() {
-        val prefillReps = _uiState.value.draftSets.lastOrNull()?.reps ?: DEFAULT_REPS
-        _uiState.update { it.copy(mode = WorkoutMode.AddSetReps, draftReps = prefillReps) }
+        val lastSet = _uiState.value.draftSets.lastOrNull()
+        val prefillReps = lastSet?.reps ?: DEFAULT_REPS
+        val prefillWeightText = lastSet?.weightKg
+            ?.let { formatWeight(_uiState.value.weightUnit.fromKg(it)) } ?: ""
+        _uiState.update {
+            it.copy(
+                mode = WorkoutMode.AddSet,
+                draftReps = prefillReps,
+                draftWeightText = prefillWeightText,
+                addSetSession = it.addSetSession + 1,
+            )
+        }
     }
 
     fun cancelAddSet() {
         _uiState.update { it.copy(mode = WorkoutMode.AddExerciseSets) }
     }
 
-    fun incrementReps() {
-        _uiState.update { it.copy(draftReps = it.draftReps + 1) }
-    }
-
-    fun decrementReps() {
-        _uiState.update { it.copy(draftReps = (it.draftReps - 1).coerceAtLeast(MIN_REPS)) }
-    }
-
-    fun confirmReps() {
-        _uiState.update { it.copy(mode = WorkoutMode.AddSetWeight) }
-    }
-
-    fun submitWeight(rawWeight: CharSequence) {
+    fun submitSet(reps: Int, rawWeight: CharSequence) {
         val trimmed = rawWeight.toString().trim()
-        val reps = _uiState.value.draftReps
         val unit = _uiState.value.weightUnit
         val weightKg: Double? = if (trimmed.isEmpty()) {
             null
@@ -248,7 +242,6 @@ class WorkoutInProgressScreen(
         val state by viewModel.uiState.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
         val keyboardOptionsFlow = rememberKeyboardOptions()
-        val weightFieldState = rememberTextFieldState()
 
         LightTheme(colors = themeColors) {
             Box(
@@ -277,23 +270,15 @@ class WorkoutInProgressScreen(
                         onFinishExercise = viewModel::finishExercise,
                     )
 
-                    WorkoutMode.AddSetReps -> RepsStepperContent(
-                        title = "Reps",
-                        reps = state.draftReps,
-                        onIncrement = viewModel::incrementReps,
-                        onDecrement = viewModel::decrementReps,
-                        onConfirm = viewModel::confirmReps,
-                        onBack = viewModel::cancelAddSet,
-                    )
-
-                    WorkoutMode.AddSetWeight -> LightTextInputEditor(
-                        title = "Weight (${state.weightUnit.displayName}, blank for bodyweight)",
-                        state = weightFieldState,
+                    WorkoutMode.AddSet -> AddSetContent(
+                        title = state.draftExercise?.name ?: "Add set",
+                        weightUnit = state.weightUnit,
+                        initialReps = state.draftReps,
+                        initialWeightText = state.draftWeightText,
                         keyboardOptionsFlow = keyboardOptionsFlow,
-                        onSubmit = viewModel::submitWeight,
+                        onConfirm = viewModel::submitSet,
                         onBack = viewModel::cancelAddSet,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxSize(),
+                        sessionKey = state.addSetSession,
                     )
                 }
 
