@@ -509,7 +509,11 @@ private fun AddExerciseSetsContent(
                     onClick = onAddSet,
                     contentDescription = "Add set",
                 ),
-                LightBarButton.Text(text = "DONE", onClick = onFinishExercise),
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ACCEPT,
+                    onClick = onFinishExercise,
+                    contentDescription = "Finish exercise",
+                ),
             ),
         )
     }

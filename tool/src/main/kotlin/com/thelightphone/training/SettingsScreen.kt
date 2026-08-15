@@ -703,7 +703,7 @@ private fun ExerciseListContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(horizontal = 6.dp, vertical = 16.dp),
                 ) {
                     state.exercises.forEach { exercise ->
                         val primaryName = muscleGroupsById[exercise.primaryMuscleGroupId]?.name ?: "Unknown"

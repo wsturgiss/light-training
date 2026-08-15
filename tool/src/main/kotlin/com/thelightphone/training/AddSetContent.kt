@@ -69,7 +69,7 @@ fun AddSetContent(
                 onBack = { activeField = ActiveField.NONE },
                 keyboardOptionsFlow = keyboardOptionsFlow,
                 singleLine = true,
-                submitLabel = "DONE",
+                submitIcon = LightIcons.ACCEPT,
                 editorKey = "add-set-weight-$sessionKey",
             )
             return
@@ -83,7 +83,7 @@ fun AddSetContent(
                 onBack = { activeField = ActiveField.NONE },
                 keyboardOptionsFlow = keyboardOptionsFlow,
                 singleLine = true,
-                submitLabel = "DONE",
+                submitIcon = LightIcons.ACCEPT,
                 editorKey = "add-set-reps-$sessionKey",
             )
             return

@@ -387,7 +387,7 @@ private fun SessionOverviewContent(
                 onClick = onBack,
                 contentDescription = "Back",
             ),
-            center = LightTopBarCenter.Text(session?.name ?: "Workout"),
+            center = LightTopBarCenter.Text("Exercises"),
         )
 
         Column(modifier = Modifier.weight(1f)) {
@@ -405,7 +405,7 @@ private fun SessionOverviewContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(horizontal = 0.dp, vertical = 0.dp),
                 ) {
                     LightText(
                         text = session.date.format(detailDateFormatter),
@@ -443,7 +443,7 @@ private fun SessionOverviewContent(
                                         "${formatWeight(displayValue)} ${state.weightUnit.displayName}"
                                     } ?: "bodyweight"
                                     Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         LightText(
@@ -467,7 +467,7 @@ private fun SessionOverviewContent(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .lightClickable(onClick = { onAddSet(exerciseIndex) })
-                                    .padding(top = 8.dp),
+                                    .padding(top = 8.dp, start = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 LightIcon(
@@ -535,7 +535,7 @@ private fun SessionPickExerciseContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(horizontal = 0.dp, vertical = 0.dp),
                 ) {
                     state.exerciseLibrary.forEach { exercise ->
                         val primaryName = state.muscleGroups
@@ -547,7 +547,7 @@ private fun SessionPickExerciseContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .lightClickable(onClick = { onSelectExercise(exercise) })
-                                .padding(vertical = 12.dp),
+                                .padding(vertical = 6.dp),
                         ) {
                             LightText(text = exercise.name, variant = LightTextVariant.Copy)
                             if (primaryName != null) {
@@ -638,7 +638,11 @@ private fun SessionAddExerciseSetsContent(
                     onClick = onAddSet,
                     contentDescription = "Add set",
                 ),
-                LightBarButton.Text(text = "DONE", onClick = onFinishExercise),
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ACCEPT,
+                    onClick = onFinishExercise,
+                    contentDescription = "Complete exercise",
+                ),
             ),
         )
     }

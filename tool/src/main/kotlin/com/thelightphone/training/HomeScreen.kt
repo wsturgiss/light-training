@@ -93,7 +93,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                     .background(LightThemeTokens.colors.background),
             ) {
                 LightTopBar(
-                    center = LightTopBarCenter.Text("Training"),
+                    center = LightTopBarCenter.Text("Training Sessions"),
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -181,9 +181,9 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             LightText(
-                text = session.name,
+                text = session.muscleGroups.joinToString(", ") { it.name },
                 variant = LightTextVariant.Copy,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(0.5f),
             )
             LightText(
                 text = session.date.format(dateFormatter),
@@ -191,11 +191,5 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
                 lighten = true,
             )
         }
-        LightText(
-            text = session.muscleGroups.joinToString(", ") { it.name },
-            variant = LightTextVariant.Detail,
-            lighten = true,
-            modifier = Modifier.padding(top = 4.dp),
-        )
     }
 }
