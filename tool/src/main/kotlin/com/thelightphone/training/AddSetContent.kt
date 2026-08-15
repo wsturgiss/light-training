@@ -23,12 +23,11 @@ import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcon
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
-import com.thelightphone.sdk.ui.keyboard.LightEmbeddedLp3Keyboard
 import com.thelightphone.sdk.ui.lightClickable
-import com.thelightphone.sdk.ui.rememberLp3TextInputKeyboardViewModel
 import com.thelightphone.training.model.WeightUnit
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,9 +39,8 @@ private enum class ActiveField { NONE, WEIGHT, REPS }
 
 /**
  * Full-screen entry for a single set: weight on the left, reps on the right, each nudgeable with
- * up/down arrows. Tapping either number switches to a single-field view with the keyboard for
- * that field; from there the user just types, submits (bottom bar), or taps back (top bar) to
- * return to the combined view.
+ * up/down arrows. Tapping either number switches to a full-screen [LightTextInputEditor] for just
+ * that field; from there the user types and taps back (or DONE) to return to the combined view.
  */
 @Composable
 fun AddSetContent(
@@ -54,49 +52,59 @@ fun AddSetContent(
     onConfirm: (reps: Int, weightText: CharSequence) -> Unit,
     onBack: () -> Unit,
     // Must change every time a new "add set" flow starts (even if this composable's call site
-    // stays mounted across sets), so the embedded keyboards below aren't bound to a stale
-    // TextFieldState left over from a previous set. See rememberLp3TextInputKeyboardViewModel.
+    // stays mounted across sets), so the full-screen text editors below aren't bound to a stale
+    // TextFieldState left over from a previous set. See LightTextInputEditor's editorKey.
     sessionKey: Any,
 ) {
     var activeField by remember { mutableStateOf(ActiveField.NONE) }
     val weightFieldState = rememberTextFieldState(initialWeightText)
     val repsFieldState = rememberTextFieldState(initialReps.toString())
 
-    val weightKeyboardViewModel = rememberLp3TextInputKeyboardViewModel(
-        state = weightFieldState,
-        singleLine = true,
-        keyboardOptionsFlow = keyboardOptionsFlow,
-        onReturn = { activeField = ActiveField.NONE },
-        editorKey = "add-set-weight-$sessionKey",
-    )
-    val repsKeyboardViewModel = rememberLp3TextInputKeyboardViewModel(
-        state = repsFieldState,
-        singleLine = true,
-        keyboardOptionsFlow = keyboardOptionsFlow,
-        onReturn = { activeField = ActiveField.NONE },
-        editorKey = "add-set-reps-$sessionKey",
-    )
+    when (activeField) {
+        ActiveField.WEIGHT -> {
+            LightTextInputEditor(
+                title = "Weight (${weightUnit.displayName})",
+                state = weightFieldState,
+                onSubmit = { activeField = ActiveField.NONE },
+                onBack = { activeField = ActiveField.NONE },
+                keyboardOptionsFlow = keyboardOptionsFlow,
+                singleLine = true,
+                submitLabel = "DONE",
+                editorKey = "add-set-weight-$sessionKey",
+            )
+            return
+        }
+
+        ActiveField.REPS -> {
+            LightTextInputEditor(
+                title = "Reps",
+                state = repsFieldState,
+                onSubmit = { activeField = ActiveField.NONE },
+                onBack = { activeField = ActiveField.NONE },
+                keyboardOptionsFlow = keyboardOptionsFlow,
+                singleLine = true,
+                submitLabel = "DONE",
+                editorKey = "add-set-reps-$sessionKey",
+            )
+            return
+        }
+
+        ActiveField.NONE -> Unit
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
             leftButton = LightBarButton.LightIcon(
                 icon = LightIcons.BACK,
-                onClick = {
-                    if (activeField == ActiveField.NONE) {
-                        onBack()
-                    } else {
-                        activeField = ActiveField.NONE
-                    }
-                },
+                onClick = onBack,
                 contentDescription = "Cancel",
             ),
             center = LightTopBarCenter.Text(title),
         )
 
-        when (activeField) {
-            ActiveField.NONE -> Row(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-            ) {
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
                 Column(
                     modifier = Modifier.weight(1f).fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -164,48 +172,8 @@ fun AddSetContent(
                             .lightClickable(onClick = { adjustReps(repsFieldState, -1) }),
                     )
                 }
-            }
-
-            ActiveField.WEIGHT -> Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                LightText(
-                    text = "Weight (${weightUnit.displayName})",
-                    variant = LightTextVariant.Detail,
-                    lighten = true,
-                )
-                LightText(
-                    text = weightFieldState.text.toString().ifEmpty { "\u2014" },
-                    variant = LightTextVariant.Heading,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            ActiveField.REPS -> Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                LightText(
-                    text = "Reps",
-                    variant = LightTextVariant.Detail,
-                    lighten = true,
-                )
-                LightText(
-                    text = repsFieldState.text.toString(),
-                    variant = LightTextVariant.Heading,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
         }
 
-        when (activeField) {
-            ActiveField.WEIGHT -> LightEmbeddedLp3Keyboard(viewModel = weightKeyboardViewModel)
-            ActiveField.REPS -> LightEmbeddedLp3Keyboard(viewModel = repsKeyboardViewModel)
-            ActiveField.NONE -> Unit
-        }
 
         LightBottomBar(
             items = listOf(
