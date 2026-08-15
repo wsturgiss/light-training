@@ -17,6 +17,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -55,6 +56,7 @@ fun LightTextInputEditor(
     submitIcon: LightIconConfiguration? = null,
     showBackButton: Boolean = true,
     singleLine: Boolean = false,
+    initialCaps: Boolean = false,
     editorKey: Any = remember { Any() },
 ) {
     val currentOnSubmit by rememberUpdatedState(onSubmit)
@@ -74,7 +76,7 @@ fun LightTextInputEditor(
 
     val keyboardViewModel: Lp3KeyboardViewModel<*> = viewModel<EnQwertyLp3KeyboardViewModel<*>>(
         key = "LightTextInputEditor-$editorKey",
-        factory = factory(keyboardCallback, keyboardOptionsFlow),
+        factory = factory(keyboardCallback, keyboardOptionsFlow, initialCaps),
     )
 
     LightTextInputEditor(
@@ -192,22 +194,27 @@ fun LightTextInputEditor(
                 }
             }
 
-            LightEmbeddedLp3Keyboard(viewModel = viewModel)
-
-            LightBottomBar(
-                items = listOf(
-                    when (submitIcon) {
-                        null -> LightBarButton.Text(
-                            text = submitLabel,
-                            onClick = { onSubmit(state.text) },
-                        )
-                        else -> LightBarButton.LightIcon(
-                            icon = submitIcon,
-                            onClick = { onSubmit(state.text) },
-                            contentDescription = submitLabel,
-                        )
-                    },
-                ),
+            LightEmbeddedLp3Keyboard(
+                viewModel = viewModel,
+                additionalBottomHeight = 5f.gridUnitsAsDp(),
+                bottomBar = {
+                    LightBottomBar(
+                        topPadding = 0.dp,
+                        items = listOf(
+                            when (submitIcon) {
+                                null -> LightBarButton.Text(
+                                    text = submitLabel,
+                                    onClick = { onSubmit(state.text) },
+                                )
+                                else -> LightBarButton.LightIcon(
+                                    icon = submitIcon,
+                                    onClick = { onSubmit(state.text) },
+                                    contentDescription = submitLabel,
+                                )
+                            },
+                        ),
+                    )
+                }
             )
         }
     }
@@ -215,7 +222,8 @@ fun LightTextInputEditor(
 
 private fun factory(
     callback: Lp3RepeatableKeyboardCallback,
-    keyboardOptionsFlow: StateFlow<KeyboardOptions>
+    keyboardOptionsFlow: StateFlow<KeyboardOptions>,
+    initialCaps: Boolean,
 ): ViewModelProvider.Factory =
     object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -227,7 +235,9 @@ private fun factory(
                     val showCloseButton = !it.isRootLayout
                     LayoutOptions(showCloseButton)
                 },
-            ) as T
+            ).apply {
+                if (initialCaps) setCapsMode(true)
+            } as T
         }
 
     }
