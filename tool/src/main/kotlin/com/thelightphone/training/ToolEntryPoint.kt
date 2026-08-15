@@ -1,4 +1,4 @@
-package com.thelightphone.sample
+package com.thelightphone.training
 
 import android.util.Log
 import com.thelightphone.sdk.EntryPoint
@@ -13,7 +13,6 @@ object ToolEntryPoint : LightEntryPoint {
         serverData: StateFlow<LightServerData?>,
     ) {
         serverData.collect {
-            // this is where you'd send push credentials up to your app server
             Log.d("ToolEntryPoint", "Current LightOS registration data: $it")
         }
     }
