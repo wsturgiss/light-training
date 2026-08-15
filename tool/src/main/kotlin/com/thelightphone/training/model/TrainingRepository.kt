@@ -84,13 +84,21 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         exerciseDao.deleteById(id)
     }
 
+    /** Returns true if any logged session references this exercise. */
+    suspend fun isExerciseInUse(id: String): Boolean =
+        sessionDao.countByExerciseId(id) > 0
+
     // --- Workout sessions ---
 
-    suspend fun listSessions(): List<WorkoutSession> =
-        sessionDao.listSessionsWithExercises().map { it.toModel() }
+    suspend fun listSessions(): List<WorkoutSession> {
+        val rows = sessionDao.listSessionsWithExercises()
+        return rows.map { resolveSession(it) }
+    }
 
-    suspend fun getSession(id: String): WorkoutSession? =
-        sessionDao.getSessionWithExercises(id)?.toModel()
+    suspend fun getSession(id: String): WorkoutSession? {
+        val row = sessionDao.getSessionWithExercises(id) ?: return null
+        return resolveSession(row)
+    }
 
     suspend fun insertSession(session: WorkoutSession) {
         val (sessionEntity, exercisesWithSets) = session.toEntities()
@@ -101,6 +109,48 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
     suspend fun updateSession(session: WorkoutSession) {
         val (sessionEntity, exercisesWithSets) = session.toEntities()
         sessionDao.replaceFullSession(sessionEntity, exercisesWithSets)
+    }
+
+    /**
+     * Resolves a [WorkoutSessionWithExercises] into a [WorkoutSession] by
+     * fetching the referenced [ExerciseEntity]s and current muscle groups
+     * from the database, so name and muscle-group tagging always reflect the
+     * latest library definitions.
+     */
+    private suspend fun resolveSession(row: WorkoutSessionWithExercises): WorkoutSession {
+        val exerciseIds = row.exercises.map { it.exercise.exerciseId }.distinct()
+        val exerciseMap = exerciseDao.getByIds(exerciseIds).associateBy { it.id }
+        val muscleGroupMap = muscleGroupDao.getAll().associateBy { it.id }
+
+        return WorkoutSession(
+            id = row.session.id,
+            name = row.session.name,
+            date = java.time.LocalDate.parse(row.session.date),
+            exercises = row.exercises
+                .sortedBy { it.exercise.orderIndex }
+                .map { exerciseWithSets ->
+                    val exerciseEntity = exerciseMap[exerciseWithSets.exercise.exerciseId]
+                    val primaryGroup = exerciseEntity?.let { muscleGroupMap[it.primaryMuscleGroupId] }
+                    val secondaryGroups = exerciseEntity
+                        ?.secondaryMuscleGroupIds
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        ?.mapNotNull { muscleGroupMap[it] }
+                        ?.map { MuscleGroup(id = it.id, name = it.name) }
+                        ?: emptyList()
+                    LoggedExercise(
+                        exerciseId = exerciseWithSets.exercise.exerciseId,
+                        name = exerciseEntity?.name ?: exerciseWithSets.exercise.exerciseId,
+                        muscleGroup = primaryGroup?.let { MuscleGroup(id = it.id, name = it.name) }
+                            ?: MuscleGroup(id = "", name = "Unknown"),
+                        secondaryMuscleGroups = secondaryGroups,
+                        sets = exerciseWithSets.sets
+                            .sortedBy { it.orderIndex }
+                            .map { ExerciseSet(reps = it.reps, weightKg = it.weightKg) },
+                    )
+                },
+        )
     }
 
     companion object {
@@ -147,9 +197,7 @@ private fun WorkoutSession.toEntities(): Pair<WorkoutSessionEntity, List<Pair<Lo
     val exercisesWithSets = exercises.mapIndexed { exerciseIndex, exercise ->
         val exerciseEntity = LoggedExerciseEntity(
             sessionId = id,
-            name = exercise.name,
-            muscleGroupId = exercise.muscleGroup.id,
-            muscleGroupName = exercise.muscleGroup.name,
+            exerciseId = exercise.exerciseId,
             orderIndex = exerciseIndex,
         )
         val setEntities = exercise.sets.mapIndexed { setIndex, set ->
@@ -164,26 +212,6 @@ private fun WorkoutSession.toEntities(): Pair<WorkoutSessionEntity, List<Pair<Lo
     }
     return sessionEntity to exercisesWithSets
 }
-
-private fun WorkoutSessionWithExercises.toModel(): WorkoutSession = WorkoutSession(
-    id = session.id,
-    name = session.name,
-    date = java.time.LocalDate.parse(session.date),
-    exercises = exercises
-        .sortedBy { it.exercise.orderIndex }
-        .map { exerciseWithSets ->
-            LoggedExercise(
-                name = exerciseWithSets.exercise.name,
-                muscleGroup = MuscleGroup(
-                    id = exerciseWithSets.exercise.muscleGroupId,
-                    name = exerciseWithSets.exercise.muscleGroupName,
-                ),
-                sets = exerciseWithSets.sets
-                    .sortedBy { it.orderIndex }
-                    .map { ExerciseSet(reps = it.reps, weightKg = it.weightKg) },
-            )
-        },
-)
 
 private fun defaultMuscleGroups(): List<MuscleGroup> = listOf(
     MuscleGroup("chest", "Chest"),

@@ -424,9 +424,15 @@ class SettingsViewModel(
     fun removeExerciseFromDetail() {
         val id = _uiState.value.draftExerciseId ?: return
         viewModelScope.launch(Dispatchers.IO) {
+            if (repository.isExerciseInUse(id)) {
+                _uiState.value = _uiState.value.copy(
+                    errorModal = "This exercise is used in one or more logged sessions. Remove those sets first.",
+                )
+                return@launch
+            }
             repository.removeExercise(id)
+            _uiState.value = _uiState.value.copy(mode = SettingsMode.ExerciseList)
         }
-        _uiState.value = _uiState.value.copy(mode = SettingsMode.ExerciseList)
     }
 
     fun dismissError() {

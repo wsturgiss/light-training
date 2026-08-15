@@ -24,6 +24,9 @@ internal interface MuscleGroupDao {
 
     @Query("SELECT COUNT(*) FROM muscle_groups")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM muscle_groups")
+    suspend fun getAll(): List<MuscleGroupEntity>
 }
 
 @Dao
@@ -42,6 +45,9 @@ internal interface ExerciseDao {
 
     @Query("SELECT COUNT(*) FROM exercises")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM exercises WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<ExerciseEntity>
 }
 
 @Dao
@@ -65,6 +71,9 @@ internal interface WorkoutSessionDao {
 
     @Query("SELECT COUNT(*) FROM workout_sessions")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM logged_exercises WHERE exercise_id = :exerciseId")
+    suspend fun countByExerciseId(exerciseId: String): Int
 
     @Query("DELETE FROM exercise_sets WHERE logged_exercise_id IN (SELECT id FROM logged_exercises WHERE session_id = :sessionId)")
     suspend fun deleteSetsForSession(sessionId: String)

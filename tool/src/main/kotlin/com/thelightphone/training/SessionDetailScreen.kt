@@ -23,6 +23,7 @@ import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightBarButton
+import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcon
 import com.thelightphone.sdk.ui.LightIcons
@@ -36,7 +37,10 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
+import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.ExerciseSet
+import com.thelightphone.training.model.LoggedExercise
+import com.thelightphone.training.model.MuscleGroup
 import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
@@ -54,16 +58,31 @@ import java.time.format.DateTimeFormatter
 
 private val detailDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
+/** Which set a rep/weight entry step is being logged against. */
+sealed class SetTarget {
+    /** A set being added to an exercise that's already part of the session. */
+    data class Existing(val exerciseIndex: Int) : SetTarget()
+
+    /** A set being added to a brand new exercise not yet appended to the session. */
+    data object Draft : SetTarget()
+}
+
 /** Which sub-screen of the session detail flow is currently shown. */
 sealed class SessionDetailMode {
     /** Full breakdown of the session's exercises and sets. */
     data object Overview : SessionDetailMode()
 
-    /** Text entry for the rep count of a new set being added to an exercise. */
-    data class AddSetReps(val exerciseIndex: Int) : SessionDetailMode()
+    /** Pick an exercise from the library. */
+    data object PickExercise : SessionDetailMode()
+
+    /** Set entry for the new exercise currently being built. */
+    data object AddExerciseSets : SessionDetailMode()
+
+    /** Stepper entry for the rep count of a new set. */
+    data class AddSetReps(val target: SetTarget) : SessionDetailMode()
 
     /** Text entry for the weight of a new set (in the user's preferred unit). */
-    data class AddSetWeight(val exerciseIndex: Int) : SessionDetailMode()
+    data class AddSetWeight(val target: SetTarget) : SessionDetailMode()
 }
 
 data class SessionDetailUiState(
@@ -71,9 +90,16 @@ data class SessionDetailUiState(
     val weightUnit: WeightUnit = WeightUnit.KG,
     val session: WorkoutSession? = null,
     val loading: Boolean = true,
-    val draftReps: Int? = null,
+    val exerciseLibrary: List<Exercise> = emptyList(),
+    val muscleGroups: List<MuscleGroup> = emptyList(),
+    val draftExercise: Exercise? = null,
+    val draftSets: List<ExerciseSet> = emptyList(),
+    val draftReps: Int = DEFAULT_REPS,
     val errorModal: String? = null,
 )
+
+private const val DEFAULT_REPS = 10
+private const val MIN_REPS = 1
 
 class SessionDetailViewModel(
     private val sessionId: String,
@@ -86,6 +112,16 @@ class SessionDetailViewModel(
 
     init {
         reload()
+        viewModelScope.launch {
+            repository.muscleGroups.collect { groups ->
+                _uiState.update { it.copy(muscleGroups = groups) }
+            }
+        }
+        viewModelScope.launch {
+            repository.exercises.collect { library ->
+                _uiState.update { it.copy(exerciseLibrary = library) }
+            }
+        }
     }
 
     private fun reload() {
@@ -97,27 +133,41 @@ class SessionDetailViewModel(
     }
 
     fun startAddSet(exerciseIndex: Int) {
-        _uiState.update { it.copy(mode = SessionDetailMode.AddSetReps(exerciseIndex), draftReps = null) }
+        val prefillReps = _uiState.value.session?.exercises?.getOrNull(exerciseIndex)
+            ?.sets?.lastOrNull()?.reps ?: DEFAULT_REPS
+        _uiState.update {
+            it.copy(mode = SessionDetailMode.AddSetReps(SetTarget.Existing(exerciseIndex)), draftReps = prefillReps)
+        }
     }
 
     fun cancelAddSet() {
-        _uiState.update { it.copy(mode = SessionDetailMode.Overview) }
+        val target = when (val mode = _uiState.value.mode) {
+            is SessionDetailMode.AddSetReps -> mode.target
+            is SessionDetailMode.AddSetWeight -> mode.target
+            else -> null
+        }
+        _uiState.update {
+            it.copy(mode = if (target is SetTarget.Draft) SessionDetailMode.AddExerciseSets else SessionDetailMode.Overview)
+        }
     }
 
-    fun submitReps(rawReps: CharSequence) {
-        val reps = rawReps.toString().trim().toIntOrNull()
-        if (reps == null || reps <= 0) {
-            _uiState.update { it.copy(errorModal = "Please enter a whole number of reps.") }
-            return
-        }
-        val exerciseIndex = (_uiState.value.mode as? SessionDetailMode.AddSetReps)?.exerciseIndex ?: return
-        _uiState.update { it.copy(draftReps = reps, mode = SessionDetailMode.AddSetWeight(exerciseIndex)) }
+    fun incrementReps() {
+        _uiState.update { it.copy(draftReps = it.draftReps + 1) }
+    }
+
+    fun decrementReps() {
+        _uiState.update { it.copy(draftReps = (it.draftReps - 1).coerceAtLeast(MIN_REPS)) }
+    }
+
+    fun confirmReps() {
+        val target = (_uiState.value.mode as? SessionDetailMode.AddSetReps)?.target ?: return
+        _uiState.update { it.copy(mode = SessionDetailMode.AddSetWeight(target)) }
     }
 
     fun submitWeight(rawWeight: CharSequence) {
-        val exerciseIndex = (_uiState.value.mode as? SessionDetailMode.AddSetWeight)?.exerciseIndex ?: return
+        val target = (_uiState.value.mode as? SessionDetailMode.AddSetWeight)?.target ?: return
         val trimmed = rawWeight.toString().trim()
-        val reps = _uiState.value.draftReps ?: return
+        val reps = _uiState.value.draftReps
         val unit = _uiState.value.weightUnit
         val weightKg: Double? = if (trimmed.isEmpty()) {
             null
@@ -129,15 +179,98 @@ class SessionDetailViewModel(
             }
             unit.toKg(parsed)
         }
-        val session = _uiState.value.session ?: return
         val newSet = ExerciseSet(reps = reps, weightKg = weightKg)
-        val updatedSession = session.copy(
-            exercises = session.exercises.mapIndexed { index, exercise ->
-                if (index == exerciseIndex) exercise.copy(sets = exercise.sets + newSet) else exercise
-            },
-        )
+        when (target) {
+            is SetTarget.Existing -> {
+                val session = _uiState.value.session ?: return
+                val updatedSession = session.copy(
+                    exercises = session.exercises.mapIndexed { index, exercise ->
+                        if (index == target.exerciseIndex) exercise.copy(sets = exercise.sets + newSet) else exercise
+                    },
+                )
+                _uiState.update {
+                    it.copy(session = updatedSession, mode = SessionDetailMode.Overview)
+                }
+                persist(updatedSession)
+            }
+
+            SetTarget.Draft -> {
+                _uiState.update {
+                    it.copy(
+                        draftSets = it.draftSets + newSet,
+                        mode = SessionDetailMode.AddExerciseSets,
+                    )
+                }
+            }
+        }
+    }
+
+    // --- Adding a whole new exercise to this past session ---
+
+    fun startAddExercise() {
         _uiState.update {
-            it.copy(session = updatedSession, draftReps = null, mode = SessionDetailMode.Overview)
+            it.copy(
+                mode = SessionDetailMode.PickExercise,
+                draftExercise = null,
+                draftSets = emptyList(),
+            )
+        }
+    }
+
+    fun cancelPickExercise() {
+        _uiState.update { it.copy(mode = SessionDetailMode.Overview) }
+    }
+
+    fun selectLibraryExercise(exercise: Exercise) {
+        _uiState.update {
+            it.copy(
+                draftExercise = exercise,
+                draftSets = emptyList(),
+                mode = SessionDetailMode.AddExerciseSets,
+            )
+        }
+    }
+
+    fun cancelAddExercise() {
+        _uiState.update { it.copy(mode = SessionDetailMode.PickExercise) }
+    }
+
+    fun startAddDraftSet() {
+        val prefillReps = _uiState.value.draftSets.lastOrNull()?.reps ?: DEFAULT_REPS
+        _uiState.update { it.copy(mode = SessionDetailMode.AddSetReps(SetTarget.Draft), draftReps = prefillReps) }
+    }
+
+    fun finishNewExercise() {
+        val state = _uiState.value
+        if (state.draftSets.isEmpty()) {
+            _uiState.update { it.copy(errorModal = "Add at least one set before finishing this exercise.") }
+            return
+        }
+        val exercise = state.draftExercise ?: run {
+            _uiState.update { it.copy(errorModal = "No exercise selected.") }
+            return
+        }
+        val session = state.session ?: return
+        val primaryGroup = state.muscleGroups.find { it.id == exercise.primaryMuscleGroupId }
+            ?: MuscleGroup(id = "", name = "Unknown")
+        val secondaryGroups = exercise.secondaryMuscleGroupIds.mapNotNull { id ->
+            state.muscleGroups.find { it.id == id }
+        }
+        val newExercise = LoggedExercise(
+            exerciseId = exercise.id,
+            name = exercise.name,
+            muscleGroup = primaryGroup,
+            secondaryMuscleGroups = secondaryGroups,
+            sets = state.draftSets,
+        )
+        val updatedSession = session.copy(exercises = session.exercises + newExercise)
+        _uiState.update {
+            it.copy(
+                session = updatedSession,
+                mode = SessionDetailMode.Overview,
+                draftExercise = null,
+                draftSets = emptyList(),
+            )
         }
         persist(updatedSession)
     }
@@ -187,7 +320,6 @@ class SessionDetailScreen(
     override fun Content() {
         val state by viewModel.uiState.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
-        val repsFieldState = rememberTextFieldState("")
         val weightFieldState = rememberTextFieldState("")
         val keyboardOptionsFlow = rememberKeyboardOptions()
 
@@ -203,16 +335,29 @@ class SessionDetailScreen(
                         onBack = { goBack(Unit) },
                         onAddSet = viewModel::startAddSet,
                         onDeleteSet = viewModel::deleteSet,
+                        onAddExercise = viewModel::startAddExercise,
                     )
 
-                    is SessionDetailMode.AddSetReps -> LightTextInputEditor(
+                    SessionDetailMode.PickExercise -> SessionPickExerciseContent(
+                        state = state,
+                        onBack = viewModel::cancelPickExercise,
+                        onSelectExercise = viewModel::selectLibraryExercise,
+                    )
+
+                    SessionDetailMode.AddExerciseSets -> SessionAddExerciseSetsContent(
+                        state = state,
+                        onBack = viewModel::cancelAddExercise,
+                        onAddSet = viewModel::startAddDraftSet,
+                        onFinishExercise = viewModel::finishNewExercise,
+                    )
+
+                    is SessionDetailMode.AddSetReps -> RepsStepperContent(
                         title = "Reps",
-                        state = repsFieldState,
-                        keyboardOptionsFlow = keyboardOptionsFlow,
-                        onSubmit = viewModel::submitReps,
+                        reps = state.draftReps,
+                        onIncrement = viewModel::incrementReps,
+                        onDecrement = viewModel::decrementReps,
+                        onConfirm = viewModel::confirmReps,
                         onBack = viewModel::cancelAddSet,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxSize(),
                     )
 
                     is SessionDetailMode.AddSetWeight -> LightTextInputEditor(
@@ -240,6 +385,7 @@ private fun SessionOverviewContent(
     onBack: () -> Unit,
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
+    onAddExercise: () -> Unit,
 ) {
     val session = state.session
 
@@ -287,7 +433,7 @@ private fun SessionOverviewContent(
                                 )
                             }
                             LightText(
-                                text = exercise.muscleGroup.name,
+                                text = muscleGroupSummary(exercise),
                                 variant = LightTextVariant.Detail,
                                 lighten = true,
                                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
@@ -331,11 +477,96 @@ private fun SessionOverviewContent(
                                     .fillMaxWidth()
                                     .lightClickable(onClick = { onAddSet(exerciseIndex) })
                                     .padding(top = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                LightIcon(
+                                    icon = LightIcons.ADD,
+                                    size = 2f,
+                                    contentDescription = "Add set",
+                                )
                                 LightText(
-                                    text = "+ Add set",
+                                    text = "Add set",
                                     variant = LightTextVariant.Detail,
                                     lighten = true,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ADD,
+                    onClick = onAddExercise,
+                    contentDescription = "Add exercise",
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun SessionPickExerciseContent(
+    state: SessionDetailUiState,
+    onBack: () -> Unit,
+    onSelectExercise: (Exercise) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Cancel",
+            ),
+            center = LightTopBarCenter.Text("Pick exercise"),
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            if (state.exerciseLibrary.isEmpty()) {
+                Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
+                    LightText(
+                        text = "No exercises in your library yet",
+                        variant = LightTextVariant.Copy,
+                        lighten = true,
+                    )
+                    LightText(
+                        text = "Add exercises in Settings first.",
+                        variant = LightTextVariant.Detail,
+                        lighten = true,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            } else {
+                LightScrollView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                ) {
+                    state.exerciseLibrary.forEach { exercise ->
+                        val primaryName = state.muscleGroups
+                            .find { it.id == exercise.primaryMuscleGroupId }
+                            ?.name
+                        val secondaryNames = exercise.secondaryMuscleGroupIds
+                            .mapNotNull { id -> state.muscleGroups.find { it.id == id }?.name }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .lightClickable(onClick = { onSelectExercise(exercise) })
+                                .padding(vertical = 12.dp),
+                        ) {
+                            LightText(text = exercise.name, variant = LightTextVariant.Copy)
+                            if (primaryName != null) {
+                                val subtitle = if (secondaryNames.isEmpty()) primaryName
+                                    else "$primaryName, Also: ${secondaryNames.joinToString(", ")}"
+                                LightText(
+                                    text = subtitle,
+                                    variant = LightTextVariant.Detail,
+                                    lighten = true,
+                                    modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
                         }
@@ -344,6 +575,88 @@ private fun SessionOverviewContent(
             }
         }
     }
+}
+
+@Composable
+private fun SessionAddExerciseSetsContent(
+    state: SessionDetailUiState,
+    onBack: () -> Unit,
+    onAddSet: () -> Unit,
+    onFinishExercise: () -> Unit,
+) {
+    val exercise = state.draftExercise ?: return
+    val primaryName = state.muscleGroups.find { it.id == exercise.primaryMuscleGroupId }?.name
+    val secondaryNames = exercise.secondaryMuscleGroupIds
+        .mapNotNull { id -> state.muscleGroups.find { it.id == id }?.name }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Cancel exercise",
+            ),
+            center = LightTopBarCenter.Text(exercise.name),
+        )
+
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 32.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                LightText(text = "Muscle group", variant = LightTextVariant.Detail, lighten = true)
+                LightText(
+                    text = primaryName ?: "Unknown",
+                    variant = LightTextVariant.Heading,
+                )
+                if (secondaryNames.isNotEmpty()) {
+                    LightText(
+                        text = "Also: " + secondaryNames.joinToString(", "),
+                        variant = LightTextVariant.Detail,
+                        lighten = true,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+
+            if (state.draftSets.isEmpty()) {
+                LightText(
+                    text = "No sets logged yet",
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            } else {
+                LightScrollView(modifier = Modifier.fillMaxWidth()) {
+                    state.draftSets.forEachIndexed { index, set ->
+                        val weightText = set.weightKg?.let { kg ->
+                            val displayValue = state.weightUnit.fromKg(kg)
+                            "${formatWeight(displayValue)} ${state.weightUnit.displayName}"
+                        } ?: "bodyweight"
+                        LightText(
+                            text = "Set ${index + 1}: ${set.reps} reps @ $weightText",
+                            variant = LightTextVariant.Detail,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ADD,
+                    onClick = onAddSet,
+                    contentDescription = "Add set",
+                ),
+                LightBarButton.Text(text = "DONE", onClick = onFinishExercise),
+            ),
+        )
+    }
+}
+
+private fun muscleGroupSummary(exercise: LoggedExercise): String {
+    val primary = exercise.muscleGroup.name
+    return if (exercise.secondaryMuscleGroups.isEmpty()) primary
+    else "$primary, Also: ${exercise.secondaryMuscleGroups.joinToString(", ") { it.name }}"
 }
 
 private fun formatWeight(value: Double): String =

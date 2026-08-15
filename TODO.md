@@ -211,13 +211,40 @@ data (no persistence yet):
       `onWorkoutFinished` persists the finished session via
       `repository.insertSession` before reloading — sessions now survive
       process death.
-- [ ] Session detail screen (tap a row in the history list to see full
+- [x] Session detail screen (tap a row in the history list to see full
       exercise/set breakdown) — `SessionRow`'s `lightClickable` is already
       stubbed for this.
 	- also allow going into old sessions and editing them, adding sets, etc
+      — `SessionDetailScreen.kt`: tapping a `SessionRow` on the home screen
+      navigates here with the session's id (`HomeScreen.kt`'s
+      `onSessionClick` -> `navigateTo { SessionDetailScreen(it, session.id) }`).
+      Loads the full session via `TrainingRepository.getSession(id)` and
+      shows date + each exercise's muscle group and sets (reps @ weight in
+      the current unit, or "bodyweight"). Each set has a trash icon to
+      delete it; a "+ Add set" row per exercise opens a two-step reps ->
+      weight text entry (mirroring the workout-in-progress flow's
+      `LightTextInputEditor` steps). Both add and delete update the
+      in-memory session state immediately and persist via
+      `TrainingRepository.updateSession` ->
+      `WorkoutSessionDao.replaceFullSession` (deletes and re-inserts the
+      session's logged exercises/sets), so edits to past sessions survive
+      process death. Editing the exercise list itself (adding/removing
+      whole exercises from a past session, not just sets) isn't supported
+      yet — only adding/removing sets on existing exercises.
+- [x] add the ability to add new exercises to past workouts.  I think that maybe the new workout flow and edit workout flow should be very similar, maybe even the same.
+- [x] use the same + icon on add set within a workout as you do to add an exercise
+	- also review any other plus icons we use and if there are any others, lets go over it and decide what to do together
+      — Found one straggler: `SessionDetailScreen.kt`'s past-session "+ Add
+      set" row per exercise was plain text; it now uses a
+      `LightIcon(LightIcons.ADD)` + "Add set" label, matching the trash-icon
+      row above it. Every other add action in the tool (home screen's start
+      workout, workout-in-progress's add exercise/add set, session detail's
+      add exercise/add set-in-new-exercise, settings' add muscle
+      group/exercise) already used `LightIcons.ADD` as an icon button, so no
+      other spots needed changes.
+- [ ] In the workout edit page, when we show an exercise, we currently only show the primary muscle group, can we append the secondary muscle groups too?
 #WAIT TO DO THIS STUFF BELOW
 - [ ] Muscle group volume/frequency rollups (e.g. "chest trained 2x this
       week") once enough session data exists.
 - [ ] Cardio support — sessions/exercises that track duration/distance
       instead of (or alongside) reps+weight.
-- [ ] Editing/deleting past sessions.

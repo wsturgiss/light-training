@@ -94,11 +94,6 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
             ) {
                 LightTopBar(
                     center = LightTopBarCenter.Text("Training"),
-                    rightButton = LightBarButton.LightIcon(
-                        icon = LightIcons.SETTINGS,
-                        contentDescription = "Settings",
-                        onClick = { openSettings() },
-                    ),
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -115,6 +110,11 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                             icon = LightIcons.ADD,
                             contentDescription = "Start workout",
                             onClick = { startWorkout() },
+                        ),
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.SETTINGS,
+                            contentDescription = "Settings",
+                            onClick = { openSettings() },
                         ),
                     ),
                 )

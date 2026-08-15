@@ -33,9 +33,7 @@ internal data class WorkoutSessionEntity(
 internal data class LoggedExerciseEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "session_id") val sessionId: String,
-    val name: String,
-    @ColumnInfo(name = "muscle_group_id") val muscleGroupId: String,
-    @ColumnInfo(name = "muscle_group_name") val muscleGroupName: String,
+    @ColumnInfo(name = "exercise_id") val exerciseId: String,
     @ColumnInfo(name = "order_index") val orderIndex: Int,
 )
 

@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         LoggedExerciseEntity::class,
         ExerciseSetEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class TrainingDatabase : RoomDatabase() {

@@ -41,11 +41,15 @@ data class ExerciseSet(
 
 /**
  * One exercise performed during a [WorkoutSession], e.g. "Bench Press",
- * tagged with the [muscleGroup] it primarily trains, plus the sets done.
+ * referencing the library [Exercise] it came from via [exerciseId], and
+ * carrying the resolved [muscleGroup] (primary) and [secondaryMuscleGroups]
+ * populated at load time from the current exercise/muscle-group tables.
  */
 data class LoggedExercise(
+    val exerciseId: String,
     val name: String,
     val muscleGroup: MuscleGroup,
+    val secondaryMuscleGroups: List<MuscleGroup> = emptyList(),
     val sets: List<ExerciseSet>,
 ) {
     /** Total reps across all sets. */
