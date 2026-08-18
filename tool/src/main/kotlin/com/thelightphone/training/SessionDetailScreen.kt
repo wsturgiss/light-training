@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -52,6 +54,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
 
 private val detailDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
@@ -78,6 +81,12 @@ sealed class SessionDetailMode {
 
     /** Combined weight + reps entry for a new set. */
     data class AddSet(val target: SetTarget) : SessionDetailMode()
+
+    /** List of exercises with reorder/delete controls. */
+    data object ManageExercises : SessionDetailMode()
+
+    /** Confirmation before deleting the whole workout. */
+    data object ConfirmDeleteWorkout : SessionDetailMode()
 }
 
 data class SessionDetailUiState(
@@ -286,6 +295,64 @@ class SessionDetailViewModel(
         persist(updatedSession)
     }
 
+    // --- Managing exercises (reorder, delete) ---
+
+    fun startManageExercises() {
+        _uiState.update { it.copy(mode = SessionDetailMode.ManageExercises) }
+    }
+
+    fun cancelManageExercises() {
+        _uiState.update { it.copy(mode = SessionDetailMode.Overview) }
+    }
+
+    fun moveExerciseUp(index: Int) {
+        if (index <= 0) return
+        val session = _uiState.value.session ?: return
+        val exercises = session.exercises.toMutableList()
+        val temp = exercises[index - 1]
+        exercises[index - 1] = exercises[index]
+        exercises[index] = temp
+        val updatedSession = session.copy(exercises = exercises)
+        _uiState.update { it.copy(session = updatedSession) }
+        persist(updatedSession)
+    }
+
+    fun moveExerciseDown(index: Int) {
+        val session = _uiState.value.session ?: return
+        if (index >= session.exercises.size - 1) return
+        val exercises = session.exercises.toMutableList()
+        val temp = exercises[index + 1]
+        exercises[index + 1] = exercises[index]
+        exercises[index] = temp
+        val updatedSession = session.copy(exercises = exercises)
+        _uiState.update { it.copy(session = updatedSession) }
+        persist(updatedSession)
+    }
+
+    fun deleteExercise(index: Int) {
+        val session = _uiState.value.session ?: return
+        val updatedSession = session.copy(
+            exercises = session.exercises.filterIndexed { i, _ -> i != index },
+        )
+        _uiState.update { it.copy(session = updatedSession) }
+        persist(updatedSession)
+    }
+
+    fun startDeleteWorkout() {
+        _uiState.update { it.copy(mode = SessionDetailMode.ConfirmDeleteWorkout) }
+    }
+
+    fun cancelDeleteWorkout() {
+        _uiState.update { it.copy(mode = SessionDetailMode.ManageExercises) }
+    }
+
+    suspend fun confirmDeleteWorkout() {
+        val sessionId = _uiState.value.session?.id ?: return
+        withContext(Dispatchers.IO) {
+            repository.deleteSession(sessionId)
+        }
+    }
+
     fun dismissError() {
         _uiState.update { it.copy(errorModal = null) }
     }
@@ -331,6 +398,7 @@ class SessionDetailScreen(
                         onAddSet = viewModel::startAddSet,
                         onDeleteSet = viewModel::deleteSet,
                         onAddExercise = viewModel::startAddExercise,
+                        onManageExercises = viewModel::startManageExercises,
                     )
 
                     SessionDetailMode.PickExercise -> SessionPickExerciseContent(
@@ -360,6 +428,32 @@ class SessionDetailScreen(
                         onBack = viewModel::cancelAddSet,
                         sessionKey = state.addSetSession,
                     )
+
+                    SessionDetailMode.ManageExercises -> ManageExercisesContent(
+                        state = state,
+                        onBack = viewModel::cancelManageExercises,
+                        onMoveUp = viewModel::moveExerciseUp,
+                        onMoveDown = viewModel::moveExerciseDown,
+                        onDeleteExercise = viewModel::deleteExercise,
+                        onDeleteWorkout = viewModel::startDeleteWorkout,
+                    )
+
+                    SessionDetailMode.ConfirmDeleteWorkout -> {
+                        ConfirmDeleteWorkoutContent(
+                            onCancel = viewModel::cancelDeleteWorkout,
+                            onConfirm = {
+                                viewModel.viewModelScope.launch {
+                                    viewModel.confirmDeleteWorkout()
+                                }
+                            },
+                            onConfirmAndNavigate = {
+                                viewModel.viewModelScope.launch {
+                                    viewModel.confirmDeleteWorkout()
+                                    goBack(Unit)
+                                }
+                            },
+                        )
+                    }
                 }
 
                 state.errorModal?.let { message ->
@@ -377,6 +471,7 @@ private fun SessionOverviewContent(
     onAddSet: (Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
     onAddExercise: () -> Unit,
+    onManageExercises: () -> Unit,
 ) {
     val session = state.session
 
@@ -413,6 +508,22 @@ private fun SessionOverviewContent(
                         lighten = true,
                         modifier = Modifier.padding(bottom = 16.dp),
                     )
+
+                    if (session.exercises.isEmpty()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 32.dp)) {
+                            LightText(
+                                text = "No exercises added yet",
+                                variant = LightTextVariant.Copy,
+                                lighten = true,
+                            )
+                            LightText(
+                                text = "Tap the add button below to log your first exercise.",
+                                variant = LightTextVariant.Detail,
+                                lighten = true,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
 
                     session.exercises.forEachIndexed { exerciseIndex, exercise ->
                         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
@@ -494,6 +605,11 @@ private fun SessionOverviewContent(
                     icon = LightIcons.ADD,
                     onClick = onAddExercise,
                     contentDescription = "Add exercise",
+                ),
+                LightBarButton.LightIcon(
+                    icon = LightIcons.SETTINGS,
+                    onClick = onManageExercises,
+                    contentDescription = "Manage exercises",
                 ),
             ),
         )
@@ -642,6 +758,160 @@ private fun SessionAddExerciseSetsContent(
                     icon = LightIcons.ACCEPT,
                     onClick = onFinishExercise,
                     contentDescription = "Complete exercise",
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ManageExercisesContent(
+    state: SessionDetailUiState,
+    onBack: () -> Unit,
+    onMoveUp: (Int) -> Unit,
+    onMoveDown: (Int) -> Unit,
+    onDeleteExercise: (Int) -> Unit,
+    onDeleteWorkout: () -> Unit,
+) {
+    val session = state.session
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Manage exercises"),
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            if (session == null || session.exercises.isEmpty()) {
+                Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
+                    LightText(
+                        text = "No exercises to manage",
+                        variant = LightTextVariant.Copy,
+                        lighten = true,
+                    )
+                }
+            } else {
+                LightScrollView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                ) {
+                    session.exercises.forEachIndexed { index, exercise ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                LightText(
+                                    text = exercise.name,
+                                    variant = LightTextVariant.Copy,
+                                )
+                                LightText(
+                                    text = muscleGroupSummary(exercise),
+                                    variant = LightTextVariant.Detail,
+                                    lighten = true,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
+
+                            // Reorder controls
+                            if (index > 0) {
+                                LightIcon(
+                                    icon = LightIcons.UP,
+                                    size = 2f,
+                                    contentDescription = "Move up",
+                                    modifier = Modifier
+                                        .lightClickable(onClick = { onMoveUp(index) })
+                                        .padding(horizontal = 8.dp),
+                                )
+                            } else {
+                                Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
+                            }
+
+                            if (index < session.exercises.size - 1) {
+                                LightIcon(
+                                    icon = LightIcons.DOWN,
+                                    size = 2f,
+                                    contentDescription = "Move down",
+                                    modifier = Modifier
+                                        .lightClickable(onClick = { onMoveDown(index) })
+                                        .padding(horizontal = 8.dp),
+                                )
+                            } else {
+                                Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
+                            }
+
+                            // Delete exercise
+                            LightIcon(
+                                icon = LightIcons.TRASH,
+                                size = 2f,
+                                contentDescription = "Delete exercise",
+                                modifier = Modifier.lightClickable(onClick = { onDeleteExercise(index) }),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.TRASH,
+                    onClick = onDeleteWorkout,
+                    contentDescription = "Delete workout",
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ConfirmDeleteWorkoutContent(
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+    onConfirmAndNavigate: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onCancel,
+                contentDescription = "Cancel",
+            ),
+            center = LightTopBarCenter.Text("Delete workout"),
+        )
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            LightText(
+                text = "Are you sure you want to delete this workout? This cannot be undone.",
+                variant = LightTextVariant.Copy,
+            )
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.DENY,
+                    onClick = onCancel,
+                    contentDescription = "Cancel",
+                ),
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ACCEPT,
+                    onClick = onConfirmAndNavigate,
+                    contentDescription = "Delete",
                 ),
             ),
         )

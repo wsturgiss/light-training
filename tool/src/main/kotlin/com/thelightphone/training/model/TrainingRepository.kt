@@ -111,6 +111,13 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         sessionDao.replaceFullSession(sessionEntity, exercisesWithSets)
     }
 
+    /** Deletes a session and all its exercises and sets. */
+    suspend fun deleteSession(id: String) {
+        sessionDao.deleteSetsForSession(id)
+        sessionDao.deleteExercisesForSession(id)
+        sessionDao.deleteSessionById(id)
+    }
+
     /**
      * Resolves a [WorkoutSessionWithExercises] into a [WorkoutSession] by
      * fetching the referenced [ExerciseEntity]s and current muscle groups

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.InitialScreen
@@ -36,7 +37,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
+import java.time.LocalDate
+import java.util.UUID
 
 private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d")
 
@@ -53,12 +57,16 @@ class HomeScreenViewModel(private val repository: TrainingRepository) : LightVie
         reloadSessions()
     }
 
-    fun onWorkoutFinished(session: WorkoutSession?) {
-        if (session == null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.insertSession(session)
-            reloadSessions()
-        }
+    suspend fun createAndInsertNewSession(): String {
+        repository.ensureSeeded()
+        val session = WorkoutSession(
+            id = UUID.randomUUID().toString(),
+            name = "Workout ${LocalDate.now()}",
+            date = LocalDate.now(),
+            exercises = emptyList(),
+        )
+        repository.insertSession(session)
+        return session.id
     }
 
     private fun reloadSessions() {
@@ -85,6 +93,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
     override fun Content() {
         val sessions by viewModel.sessions.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
+        val scope = rememberCoroutineScope()
 
         LightTheme(colors = themeColors) {
             Column(
@@ -109,7 +118,19 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                         LightBarButton.LightIcon(
                             icon = LightIcons.ADD,
                             contentDescription = "Start workout",
-                            onClick = { startWorkout() },
+                            onClick = {
+                                scope.launch {
+                                    val sessionId = withContext(Dispatchers.IO) {
+                                        viewModel.createAndInsertNewSession()
+                                    }
+                                    openSessionDetail(WorkoutSession(
+                                        id = sessionId,
+                                        name = "",
+                                        date = LocalDate.now(),
+                                        exercises = emptyList(),
+                                    ))
+                                }
+                            },
                         ),
                         LightBarButton.LightIcon(
                             icon = LightIcons.SETTINGS,
@@ -119,12 +140,6 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                     ),
                 )
             }
-        }
-    }
-
-    private fun startWorkout() {
-        navigateTo(screenFactory = { WorkoutInProgressScreen(it) }) { session ->
-            viewModel.onWorkoutFinished(session)
         }
     }
 
@@ -180,8 +195,13 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
             .padding(vertical = 12.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
+            val muscleGroupText = if (session.exercises.isEmpty()) {
+                "Empty workout"
+            } else {
+                session.muscleGroups.joinToString(", ") { it.name }
+            }
             LightText(
-                text = session.muscleGroups.joinToString(", ") { it.name },
+                text = muscleGroupText,
                 variant = LightTextVariant.Copy,
                 modifier = Modifier.weight(0.5f),
             )
