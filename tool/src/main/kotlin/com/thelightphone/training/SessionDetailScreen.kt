@@ -247,10 +247,6 @@ class SessionDetailViewModel(
 
     fun finishNewExercise() {
         val state = _uiState.value
-        if (state.draftSets.isEmpty()) {
-            _uiState.update { it.copy(errorModal = "Add at least one set before finishing this exercise.") }
-            return
-        }
         val exercise = state.draftExercise ?: run {
             _uiState.update { it.copy(errorModal = "No exercise selected.") }
             return
