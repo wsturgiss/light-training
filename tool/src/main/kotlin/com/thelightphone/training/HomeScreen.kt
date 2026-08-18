@@ -157,7 +157,7 @@ private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(16.dp),
     ) {
         LightText(
             text = "No workouts logged yet",
@@ -178,7 +178,7 @@ private fun SessionList(sessions: List<WorkoutSession>, onSessionClick: (Workout
     LightScrollView(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 32.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         sessions.forEach { session ->
             SessionRow(session, onClick = { onSessionClick(session) })
@@ -203,7 +203,9 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
             LightText(
                 text = muscleGroupText,
                 variant = LightTextVariant.Copy,
-                modifier = Modifier.weight(0.5f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 16.dp),
             )
             LightText(
                 text = session.date.format(dateFormatter),

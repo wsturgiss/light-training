@@ -609,7 +609,7 @@ private fun SessionOverviewContent(
                 LightBarButton.LightIcon(
                     icon = LightIcons.SETTINGS,
                     onClick = onManageExercises,
-                    contentDescription = "Manage exercises",
+                    contentDescription = "Manage Session",
                 ),
             ),
         )
@@ -828,7 +828,7 @@ private fun ManageExercisesContent(
                                     contentDescription = "Move up",
                                     modifier = Modifier
                                         .lightClickable(onClick = { onMoveUp(index) })
-                                        .padding(horizontal = 8.dp),
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
                                 )
                             } else {
                                 Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
@@ -841,7 +841,7 @@ private fun ManageExercisesContent(
                                     contentDescription = "Move down",
                                     modifier = Modifier
                                         .lightClickable(onClick = { onMoveDown(index) })
-                                        .padding(horizontal = 8.dp),
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
                                 )
                             } else {
                                 Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
