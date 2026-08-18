@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -14,6 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -794,14 +796,14 @@ private fun ManageExercisesContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                 ) {
                     session.exercises.forEachIndexed { index, exercise ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalAlignment = Alignment.Top,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 LightText(
@@ -819,12 +821,14 @@ private fun ManageExercisesContent(
                             // Reorder controls
                             if (index > 0) {
                                 LightIcon(
-                                    icon = LightIcons.UP,
+                                    icon = LightIcons.ARROW_DOWN,
                                     size = 2f,
                                     contentDescription = "Move up",
                                     modifier = Modifier
-                                        .lightClickable(onClick = { onMoveUp(index) })
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        .align(Alignment.CenterVertically)
+                                        .padding(horizontal = 8.dp)
+                                        .rotate(180f)
+                                        .lightClickable(onClick = { onMoveUp(index) }),
                                 )
                             } else {
                                 Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
@@ -832,12 +836,13 @@ private fun ManageExercisesContent(
 
                             if (index < session.exercises.size - 1) {
                                 LightIcon(
-                                    icon = LightIcons.DOWN,
+                                    icon = LightIcons.ARROW_DOWN,
                                     size = 2f,
                                     contentDescription = "Move down",
                                     modifier = Modifier
-                                        .lightClickable(onClick = { onMoveDown(index) })
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        .align(Alignment.CenterVertically)
+                                        .padding(horizontal = 8.dp)
+                                        .lightClickable(onClick = { onMoveDown(index) }),
                                 )
                             } else {
                                 Box(modifier = Modifier.size(24.dp)) // Spacer for alignment
@@ -848,7 +853,10 @@ private fun ManageExercisesContent(
                                 icon = LightIcons.TRASH,
                                 size = 2f,
                                 contentDescription = "Delete exercise",
-                                modifier = Modifier.lightClickable(onClick = { onDeleteExercise(index) }),
+                                modifier = Modifier
+                                    .align(Alignment.CenterVertically)
+                                    .padding(horizontal = 8.dp)
+                                    .lightClickable(onClick = { onDeleteExercise(index) }),
                             )
                         }
                     }
