@@ -19,8 +19,13 @@ a tool for tracking lifting and cardio workouts built with the light-sdk for the
     - rest periods
     - number of rounds?
   - tbd
-- Trends
+- Weight training
+  - RPE?
+  - View previous reps/sets/weights of an exercise
+  - Use previous workout as a template for a new workout
+- Trends / Analytics
   - Sets per time period
     - per muscle group
     - per exercise
   - Distance/time per time period
+- Data backup
