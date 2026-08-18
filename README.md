@@ -1,5 +1,11 @@
 # light-training
 a tool for tracking lifting and cardio workouts built with the light-sdk for the lightOS
+
+## Screenshots
+
+![App screenshot 1](./docs/images/screenshot1.png)
+![App screenshot 2](./docs/images/screenshot2.png)
+
 ## Roadmap
 
 - Cardio workout tracking
