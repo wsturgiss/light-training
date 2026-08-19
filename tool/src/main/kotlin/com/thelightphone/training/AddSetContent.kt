@@ -113,9 +113,17 @@ fun AddSetContent(
                     LightIcon(
                         icon = LightIcons.UP,
                         contentDescription = "Increase weight",
+                        size = 4f,
                         modifier = Modifier.lightClickable(
                             onClick = { adjustWeight(weightFieldState, +WEIGHT_STEP) },
                         ),
+                    )
+                    LightText(
+                        text = weightFieldState.text.toString().ifEmpty { "\u2014" },
+                        variant = LightTextVariant.Title,
+                        modifier = Modifier
+                            .padding(top = 16.dp)
+                            .lightClickable(onClick = { activeField = ActiveField.WEIGHT }),
                     )
                     LightText(
                         text = "Weight (${weightUnit.displayName})",
@@ -123,18 +131,12 @@ fun AddSetContent(
                         lighten = true,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    LightText(
-                        text = weightFieldState.text.toString().ifEmpty { "\u2014" },
-                        variant = LightTextVariant.Title,
-                        modifier = Modifier
-                            .padding(top = 4.dp)
-                            .lightClickable(onClick = { activeField = ActiveField.WEIGHT }),
-                    )
                     LightIcon(
                         icon = LightIcons.DOWN,
                         contentDescription = "Decrease weight",
+                        size = 4f,
                         modifier = Modifier
-                            .padding(top = 4.dp)
+                            .padding(top = 24.dp)
                             .lightClickable(onClick = { adjustWeight(weightFieldState, -WEIGHT_STEP) }),
                     )
                 }
@@ -147,9 +149,17 @@ fun AddSetContent(
                     LightIcon(
                         icon = LightIcons.UP,
                         contentDescription = "Increase reps",
+                        size = 4f,
                         modifier = Modifier.lightClickable(
                             onClick = { adjustReps(repsFieldState, +1) },
                         ),
+                    )
+                    LightText(
+                        text = repsFieldState.text.toString(),
+                        variant = LightTextVariant.Title,
+                        modifier = Modifier
+                            .padding(top = 16.dp)
+                            .lightClickable(onClick = { activeField = ActiveField.REPS }),
                     )
                     LightText(
                         text = "Reps",
@@ -157,18 +167,12 @@ fun AddSetContent(
                         lighten = true,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    LightText(
-                        text = repsFieldState.text.toString(),
-                        variant = LightTextVariant.Title,
-                        modifier = Modifier
-                            .padding(top = 4.dp)
-                            .lightClickable(onClick = { activeField = ActiveField.REPS }),
-                    )
                     LightIcon(
                         icon = LightIcons.DOWN,
                         contentDescription = "Decrease reps",
+                        size = 4f,
                         modifier = Modifier
-                            .padding(top = 4.dp)
+                            .padding(top = 24.dp)
                             .lightClickable(onClick = { adjustReps(repsFieldState, -1) }),
                     )
                 }
