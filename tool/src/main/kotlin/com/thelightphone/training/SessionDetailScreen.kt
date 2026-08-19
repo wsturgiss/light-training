@@ -498,7 +498,7 @@ private fun SessionOverviewContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 0.dp, vertical = 0.dp),
+                        .padding(UiConstants.DenseScrollPadding),
                 ) {
                     LightText(
                         text = session.date.format(detailDateFormatter),
@@ -649,7 +649,7 @@ private fun SessionPickExerciseContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 0.dp, vertical = 0.dp),
+                        .padding(UiConstants.DenseScrollPadding),
                 ) {
                     state.exerciseLibrary.forEach { exercise ->
                         val primaryName = state.muscleGroups
@@ -729,7 +729,11 @@ private fun SessionAddExerciseSetsContent(
                     modifier = Modifier.padding(top = 16.dp),
                 )
             } else {
-                LightScrollView(modifier = Modifier.fillMaxWidth()) {
+                LightScrollView(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(UiConstants.DenseScrollPadding),
+                ) {
                     state.draftSets.forEachIndexed { index, set ->
                         val weightText = set.weightKg?.let { kg ->
                             val displayValue = state.weightUnit.fromKg(kg)
@@ -796,7 +800,7 @@ private fun ManageExercisesContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .padding(UiConstants.DenseScrollPadding),
                 ) {
                     session.exercises.forEachIndexed { index, exercise ->
                         Row(

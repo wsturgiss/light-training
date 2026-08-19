@@ -652,7 +652,7 @@ private fun MuscleGroupListContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(UiConstants.SpacedScrollPadding),
                 ) {
                     state.muscleGroups.forEach { group ->
                         SingleFieldEditableRow(
@@ -703,7 +703,7 @@ private fun ExerciseListContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 6.dp, vertical = 16.dp),
+                        .padding(UiConstants.DenseScrollPadding),
                 ) {
                     state.exercises.forEach { exercise ->
                         val primaryName = muscleGroupsById[exercise.primaryMuscleGroupId]?.name ?: "Unknown"
@@ -856,7 +856,7 @@ private fun MuscleGroupSingleSelectContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(UiConstants.SpacedScrollPadding),
                 ) {
                     muscleGroups.forEach { group ->
                         SelectableRow(
@@ -908,7 +908,7 @@ private fun MuscleGroupMultiSelectContent(
                 LightScrollView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 16.dp),
+                        .padding(UiConstants.SpacedScrollPadding),
                 ) {
                     selectableGroups.forEach { group ->
                         SelectableRow(

@@ -178,7 +178,7 @@ private fun SessionList(sessions: List<WorkoutSession>, onSessionClick: (Workout
     LightScrollView(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(UiConstants.SpacedScrollPadding),
     ) {
         sessions.forEach { session ->
             SessionRow(session, onClick = { onSessionClick(session) })
