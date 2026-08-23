@@ -23,7 +23,9 @@ import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcon
+import com.thelightphone.sdk.ui.LightIconConfiguration
 import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -48,8 +50,43 @@ private const val MIN_TIME_SEC = 5
 private const val MIN_ROUNDS = 1
 private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 
-private enum class IntervalMode { SELECT_EXERCISE, CONFIGURE, ACTIVE }
+private enum class IntervalMode { SELECT_EXERCISE, SELECT_PRESET, CONFIGURE, ACTIVE }
 private enum class IntervalPhase { WORK, REST }
+
+/** A starting point for the work/rest/rounds fields on the configure screen. */
+private enum class IntervalPreset(
+    val title: String,
+    val subtitle: String,
+    val icon: LightIconConfiguration,
+    val workSeconds: Int,
+    val restSeconds: Int,
+    val rounds: Int,
+) {
+    TABATA(
+        title = "Tabata",
+        subtitle = "20 sec work, 10 sec rest, 8 rounds",
+        icon = LightIcons.ALARM,
+        workSeconds = 20,
+        restSeconds = 10,
+        rounds = 8,
+    ),
+    NORDIC_4X4(
+        title = "Nordic 4x4",
+        subtitle = "4 min work, 3 min rest, 4 rounds",
+        icon = LightIcons.LOOP,
+        workSeconds = 240,
+        restSeconds = 180,
+        rounds = 4,
+    ),
+    CUSTOM(
+        title = "Custom",
+        subtitle = "Set your own work, rest, and rounds",
+        icon = LightIcons.LARGE_LIST,
+        workSeconds = DEFAULT_WORK_SEC,
+        restSeconds = DEFAULT_REST_SEC,
+        rounds = DEFAULT_ROUNDS,
+    ),
+}
 
 /**
  * Mock-up for an interval workout: pick which cardio exercise, configure work/rest durations
@@ -73,10 +110,12 @@ class IntervalWorkoutScreen(
         var restSeconds by remember { mutableStateOf(DEFAULT_REST_SEC) }
         var rounds by remember { mutableStateOf(DEFAULT_ROUNDS) }
         var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
+        var isLoadingExercises by remember { mutableStateOf(true) }
 
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) { repository.ensureSeeded() }
             cardioExercises = loadCardioExercises(repository)
+            isLoadingExercises = false
         }
 
         LightTheme(colors = themeColors) {
@@ -84,9 +123,21 @@ class IntervalWorkoutScreen(
                 IntervalMode.SELECT_EXERCISE -> ExercisePickerContent(
                     title = "Interval Training",
                     exercises = cardioExercises,
+                    isLoading = isLoadingExercises,
                     onBack = { goBack(Unit) },
                     onSelect = { exercise ->
                         selectedExercise = exercise
+                        mode = IntervalMode.SELECT_PRESET
+                    },
+                )
+
+                IntervalMode.SELECT_PRESET -> IntervalPresetContent(
+                    exerciseName = selectedExercise?.name ?: "Intervals",
+                    onBack = { mode = IntervalMode.SELECT_EXERCISE },
+                    onSelect = { preset ->
+                        workSeconds = preset.workSeconds
+                        restSeconds = preset.restSeconds
+                        rounds = preset.rounds
                         mode = IntervalMode.CONFIGURE
                     },
                 )
@@ -99,7 +150,7 @@ class IntervalWorkoutScreen(
                     onAdjustWork = { delta -> workSeconds = (workSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
                     onAdjustRest = { delta -> restSeconds = (restSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
                     onAdjustRounds = { delta -> rounds = (rounds + delta).coerceAtLeast(MIN_ROUNDS) },
-                    onBack = { mode = IntervalMode.SELECT_EXERCISE },
+                    onBack = { mode = IntervalMode.SELECT_PRESET },
                     onStart = { mode = IntervalMode.ACTIVE },
                 )
 
@@ -122,6 +173,68 @@ private suspend fun loadCardioExercises(repository: TrainingRepository): List<Ex
         .map { it.id }
         .toSet()
     return repository.exercises.first().filter { it.primaryMuscleGroupId in cardioGroupIds }
+}
+
+@Composable
+private fun IntervalPresetContent(
+    exerciseName: String,
+    onBack: () -> Unit,
+    onSelect: (IntervalPreset) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightThemeTokens.colors.background),
+    ) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text(exerciseName),
+        )
+
+        LightScrollView(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(UiConstants.SpacedScrollPadding),
+        ) {
+            IntervalPreset.entries.forEach { preset ->
+                IntervalPresetRow(preset = preset, onClick = { onSelect(preset) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntervalPresetRow(
+    preset: IntervalPreset,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .lightClickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LightIcon(
+            icon = preset.icon,
+            size = 3f,
+            contentDescription = null,
+            modifier = Modifier.padding(end = 16.dp),
+        )
+        Column {
+            LightText(text = preset.title, variant = LightTextVariant.Copy)
+            LightText(
+                text = preset.subtitle,
+                variant = LightTextVariant.Detail,
+                lighten = true,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
 }
 
 @Composable

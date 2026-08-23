@@ -28,6 +28,7 @@ import com.thelightphone.training.model.Exercise
 fun ExercisePickerContent(
     title: String,
     exercises: List<Exercise>,
+    isLoading: Boolean = false,
     onBack: () -> Unit,
     onSelect: (Exercise) -> Unit,
 ) {
@@ -46,7 +47,9 @@ fun ExercisePickerContent(
         )
 
         Column(modifier = Modifier.weight(1f)) {
-            if (exercises.isEmpty()) {
+            if (isLoading) {
+                // Avoid flashing the "no exercises" empty state while the initial load is in flight.
+            } else if (exercises.isEmpty()) {
                 Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
                     LightText(
                         text = "No cardio exercises yet",

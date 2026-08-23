@@ -65,10 +65,12 @@ class CardioWorkoutScreen(
         var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
         var targetMinutes by remember { mutableStateOf(DEFAULT_DURATION_MIN) }
         var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
+        var isLoadingExercises by remember { mutableStateOf(true) }
 
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) { repository.ensureSeeded() }
             cardioExercises = loadCardioExercises(repository)
+            isLoadingExercises = false
         }
 
         LightTheme(colors = themeColors) {
@@ -76,6 +78,7 @@ class CardioWorkoutScreen(
                 CardioMode.SELECT_EXERCISE -> ExercisePickerContent(
                     title = "Steady-State Cardio",
                     exercises = cardioExercises,
+                    isLoading = isLoadingExercises,
                     onBack = { goBack(Unit) },
                     onSelect = { exercise ->
                         selectedExercise = exercise
