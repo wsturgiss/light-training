@@ -22,14 +22,17 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         exerciseDao.observeAll().map { entities -> entities.map { it.toModel() } }
 
     /**
-     * Seeds the default muscle groups/exercises, skipping any id that's already present.
-     * Safe to call on every launch: existing installs pick up newly added defaults (e.g. a
-     * cardio exercise introduced in a later release) without duplicating or touching rows
-     * the user already has.
+     * Seeds the default muscle groups/exercises the first time the app runs. Once either
+     * table has any rows, this is a no-op forever after -- edits and deletions are left
+     * entirely to the user, including newly-added defaults from a later app update.
      */
     suspend fun ensureSeeded() {
-        defaultMuscleGroups().forEach { muscleGroupDao.insertIgnore(it.toEntity()) }
-        defaultExercises().forEach { exerciseDao.insertIgnore(it.toEntity()) }
+        if (muscleGroupDao.count() == 0) {
+            defaultMuscleGroups().forEach { muscleGroupDao.insert(it.toEntity()) }
+        }
+        if (exerciseDao.count() == 0) {
+            defaultExercises().forEach { exerciseDao.insert(it.toEntity()) }
+        }
     }
 
     // --- Muscle groups ---
