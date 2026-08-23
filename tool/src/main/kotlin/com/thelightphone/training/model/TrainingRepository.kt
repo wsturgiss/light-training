@@ -254,4 +254,9 @@ private fun defaultExercises(): List<Exercise> = listOf(
         primaryMuscleGroupId = "quads",
         secondaryMuscleGroupIds = listOf("glutes", "hamstrings"),
     ),
+    Exercise(id = "running", name = "Running", primaryMuscleGroupId = "cardio"),
+    Exercise(id = "rowing", name = "Rowing", primaryMuscleGroupId = "cardio"),
+    Exercise(id = "cycling", name = "Cycling", primaryMuscleGroupId = "cardio"),
+    Exercise(id = "swimming", name = "Swimming", primaryMuscleGroupId = "cardio"),
+    Exercise(id = "jump-rope", name = "Jump Rope", primaryMuscleGroupId = "cardio"),
 )

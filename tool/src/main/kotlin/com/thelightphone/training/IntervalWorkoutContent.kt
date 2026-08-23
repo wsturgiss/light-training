@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
+import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcon
@@ -31,7 +32,13 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
+import com.thelightphone.training.model.Exercise
+import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 private const val DEFAULT_WORK_SEC = 30
 private const val DEFAULT_REST_SEC = 15
@@ -39,40 +46,65 @@ private const val DEFAULT_ROUNDS = 8
 private const val TIME_STEP_SEC = 5
 private const val MIN_TIME_SEC = 5
 private const val MIN_ROUNDS = 1
+private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 
-private enum class IntervalMode { CONFIGURE, ACTIVE }
+private enum class IntervalMode { SELECT_EXERCISE, CONFIGURE, ACTIVE }
 private enum class IntervalPhase { WORK, REST }
 
 /**
- * Mock-up for an interval workout: configure work/rest durations and round count, then run
- * a live work/rest countdown. Not wired to persistence -- exploring the flow and layout only.
+ * Mock-up for an interval workout: pick which cardio exercise, configure work/rest durations
+ * and round count, then run a live work/rest countdown. Not wired to session persistence yet --
+ * exploring the flow and layout only.
  */
 class IntervalWorkoutScreen(
     sealedActivity: SealedLightActivity,
 ) : SimpleLightScreen<Unit>(sealedActivity) {
 
+    private val repository = TrainingRepository.getInstance {
+        lightContext.buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
+    }
+
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
-        var mode by remember { mutableStateOf(IntervalMode.CONFIGURE) }
+        var mode by remember { mutableStateOf(IntervalMode.SELECT_EXERCISE) }
+        var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
         var workSeconds by remember { mutableStateOf(DEFAULT_WORK_SEC) }
         var restSeconds by remember { mutableStateOf(DEFAULT_REST_SEC) }
         var rounds by remember { mutableStateOf(DEFAULT_ROUNDS) }
+        var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
+
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) { repository.ensureSeeded() }
+            cardioExercises = loadCardioExercises(repository)
+        }
 
         LightTheme(colors = themeColors) {
             when (mode) {
+                IntervalMode.SELECT_EXERCISE -> ExercisePickerContent(
+                    title = "Interval Training",
+                    exercises = cardioExercises,
+                    onBack = { goBack(Unit) },
+                    onSelect = { exercise ->
+                        selectedExercise = exercise
+                        mode = IntervalMode.CONFIGURE
+                    },
+                )
+
                 IntervalMode.CONFIGURE -> IntervalConfigureContent(
+                    exerciseName = selectedExercise?.name ?: "Intervals",
                     workSeconds = workSeconds,
                     restSeconds = restSeconds,
                     rounds = rounds,
                     onAdjustWork = { delta -> workSeconds = (workSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
                     onAdjustRest = { delta -> restSeconds = (restSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
                     onAdjustRounds = { delta -> rounds = (rounds + delta).coerceAtLeast(MIN_ROUNDS) },
-                    onBack = { goBack(Unit) },
+                    onBack = { mode = IntervalMode.SELECT_EXERCISE },
                     onStart = { mode = IntervalMode.ACTIVE },
                 )
 
                 IntervalMode.ACTIVE -> IntervalActiveContent(
+                    exerciseName = selectedExercise?.name ?: "Intervals",
                     workSeconds = workSeconds,
                     restSeconds = restSeconds,
                     rounds = rounds,
@@ -83,8 +115,18 @@ class IntervalWorkoutScreen(
     }
 }
 
+/** Exercises tagged with the "Cardio" muscle group, looked up by name (not a hardcoded id). */
+private suspend fun loadCardioExercises(repository: TrainingRepository): List<Exercise> {
+    val cardioGroupIds = repository.muscleGroups.first()
+        .filter { it.name.equals(CARDIO_MUSCLE_GROUP_NAME, ignoreCase = true) }
+        .map { it.id }
+        .toSet()
+    return repository.exercises.first().filter { it.primaryMuscleGroupId in cardioGroupIds }
+}
+
 @Composable
 private fun IntervalConfigureContent(
+    exerciseName: String,
     workSeconds: Int,
     restSeconds: Int,
     rounds: Int,
@@ -105,7 +147,7 @@ private fun IntervalConfigureContent(
                 onClick = onBack,
                 contentDescription = "Cancel",
             ),
-            center = LightTopBarCenter.Text("Interval Training"),
+            center = LightTopBarCenter.Text(exerciseName),
         )
 
         Row(
@@ -197,6 +239,7 @@ private fun NudgeField(
 
 @Composable
 private fun IntervalActiveContent(
+    exerciseName: String,
     workSeconds: Int,
     restSeconds: Int,
     rounds: Int,
@@ -243,7 +286,7 @@ private fun IntervalActiveContent(
             .background(LightThemeTokens.colors.background),
     ) {
         LightTopBar(
-            center = LightTopBarCenter.Text("Interval Training"),
+            center = LightTopBarCenter.Text(exerciseName),
         )
 
         Column(

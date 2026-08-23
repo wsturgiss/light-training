@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
+import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcon
@@ -29,40 +30,71 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
+import com.thelightphone.training.model.Exercise
+import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 private const val DEFAULT_DURATION_MIN = 30
 private const val MIN_DURATION_MIN = 5
 private const val DURATION_STEP_MIN = 5
+private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 
-private enum class CardioMode { CONFIGURE, ACTIVE }
+private enum class CardioMode { SELECT_EXERCISE, CONFIGURE, ACTIVE }
 
 /**
- * Mock-up for a steady-state cardio workout: pick a target duration, then run a live
- * stopwatch against it. Not wired to persistence -- exploring the flow and layout only.
+ * Mock-up for a steady-state cardio workout: pick which cardio exercise, pick a target
+ * duration, then run a live stopwatch against it. Not wired to session persistence yet --
+ * exploring the flow and layout only.
  */
 class CardioWorkoutScreen(
     sealedActivity: SealedLightActivity,
 ) : SimpleLightScreen<Unit>(sealedActivity) {
 
+    private val repository = TrainingRepository.getInstance {
+        lightContext.buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
+    }
+
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
-        var mode by remember { mutableStateOf(CardioMode.CONFIGURE) }
+        var mode by remember { mutableStateOf(CardioMode.SELECT_EXERCISE) }
+        var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
         var targetMinutes by remember { mutableStateOf(DEFAULT_DURATION_MIN) }
+        var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
+
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) { repository.ensureSeeded() }
+            cardioExercises = loadCardioExercises(repository)
+        }
 
         LightTheme(colors = themeColors) {
             when (mode) {
+                CardioMode.SELECT_EXERCISE -> ExercisePickerContent(
+                    title = "Steady-State Cardio",
+                    exercises = cardioExercises,
+                    onBack = { goBack(Unit) },
+                    onSelect = { exercise ->
+                        selectedExercise = exercise
+                        mode = CardioMode.CONFIGURE
+                    },
+                )
+
                 CardioMode.CONFIGURE -> CardioConfigureContent(
+                    exerciseName = selectedExercise?.name ?: "Cardio",
                     targetMinutes = targetMinutes,
                     onAdjust = { delta ->
                         targetMinutes = (targetMinutes + delta).coerceAtLeast(MIN_DURATION_MIN)
                     },
-                    onBack = { goBack(Unit) },
+                    onBack = { mode = CardioMode.SELECT_EXERCISE },
                     onStart = { mode = CardioMode.ACTIVE },
                 )
 
                 CardioMode.ACTIVE -> CardioActiveContent(
+                    exerciseName = selectedExercise?.name ?: "Cardio",
                     targetMinutes = targetMinutes,
                     onFinish = { goBack(Unit) },
                 )
@@ -71,8 +103,18 @@ class CardioWorkoutScreen(
     }
 }
 
+/** Exercises tagged with the "Cardio" muscle group, looked up by name (not a hardcoded id). */
+private suspend fun loadCardioExercises(repository: TrainingRepository): List<Exercise> {
+    val cardioGroupIds = repository.muscleGroups.first()
+        .filter { it.name.equals(CARDIO_MUSCLE_GROUP_NAME, ignoreCase = true) }
+        .map { it.id }
+        .toSet()
+    return repository.exercises.first().filter { it.primaryMuscleGroupId in cardioGroupIds }
+}
+
 @Composable
 private fun CardioConfigureContent(
+    exerciseName: String,
     targetMinutes: Int,
     onAdjust: (Int) -> Unit,
     onBack: () -> Unit,
@@ -89,7 +131,7 @@ private fun CardioConfigureContent(
                 onClick = onBack,
                 contentDescription = "Cancel",
             ),
-            center = LightTopBarCenter.Text("Steady-State Cardio"),
+            center = LightTopBarCenter.Text(exerciseName),
         )
 
         Column(
@@ -138,6 +180,7 @@ private fun CardioConfigureContent(
 
 @Composable
 private fun CardioActiveContent(
+    exerciseName: String,
     targetMinutes: Int,
     onFinish: () -> Unit,
 ) {
@@ -157,7 +200,7 @@ private fun CardioActiveContent(
             .background(LightThemeTokens.colors.background),
     ) {
         LightTopBar(
-            center = LightTopBarCenter.Text("Steady-State Cardio"),
+            center = LightTopBarCenter.Text(exerciseName),
         )
 
         Column(
