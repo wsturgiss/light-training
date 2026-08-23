@@ -3,6 +3,7 @@ package com.thelightphone.training.model
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
@@ -16,14 +17,15 @@ internal interface MuscleGroupDao {
     @Insert
     suspend fun insert(group: MuscleGroupEntity)
 
+    /** Used for seeding defaults: leaves an existing row with the same id untouched. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(group: MuscleGroupEntity)
+
     @Update
     suspend fun update(group: MuscleGroupEntity)
 
     @Query("DELETE FROM muscle_groups WHERE id = :id")
     suspend fun deleteById(id: String)
-
-    @Query("SELECT COUNT(*) FROM muscle_groups")
-    suspend fun count(): Int
 
     @Query("SELECT * FROM muscle_groups")
     suspend fun getAll(): List<MuscleGroupEntity>
@@ -37,14 +39,15 @@ internal interface ExerciseDao {
     @Insert
     suspend fun insert(exercise: ExerciseEntity)
 
+    /** Used for seeding defaults: leaves an existing row with the same id untouched. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(exercise: ExerciseEntity)
+
     @Update
     suspend fun update(exercise: ExerciseEntity)
 
     @Query("DELETE FROM exercises WHERE id = :id")
     suspend fun deleteById(id: String)
-
-    @Query("SELECT COUNT(*) FROM exercises")
-    suspend fun count(): Int
 
     @Query("SELECT * FROM exercises WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<String>): List<ExerciseEntity>

@@ -21,14 +21,15 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
     val exercises: Flow<List<Exercise>> =
         exerciseDao.observeAll().map { entities -> entities.map { it.toModel() } }
 
-    /** Seeds the default muscle groups/exercises the first time the app runs. */
+    /**
+     * Seeds the default muscle groups/exercises, skipping any id that's already present.
+     * Safe to call on every launch: existing installs pick up newly added defaults (e.g. a
+     * cardio exercise introduced in a later release) without duplicating or touching rows
+     * the user already has.
+     */
     suspend fun ensureSeeded() {
-        if (muscleGroupDao.count() == 0) {
-            defaultMuscleGroups().forEach { muscleGroupDao.insert(it.toEntity()) }
-        }
-        if (exerciseDao.count() == 0) {
-            defaultExercises().forEach { exerciseDao.insert(it.toEntity()) }
-        }
+        defaultMuscleGroups().forEach { muscleGroupDao.insertIgnore(it.toEntity()) }
+        defaultExercises().forEach { exerciseDao.insertIgnore(it.toEntity()) }
     }
 
     // --- Muscle groups ---
