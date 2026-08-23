@@ -1,0 +1,319 @@
+package com.thelightphone.training
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.thelightphone.sdk.SealedLightActivity
+import com.thelightphone.sdk.SimpleLightScreen
+import com.thelightphone.sdk.ui.LightBarButton
+import com.thelightphone.sdk.ui.LightBottomBar
+import com.thelightphone.sdk.ui.LightIcon
+import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextVariant
+import com.thelightphone.sdk.ui.LightTheme
+import com.thelightphone.sdk.ui.LightThemeController
+import com.thelightphone.sdk.ui.LightThemeTokens
+import com.thelightphone.sdk.ui.LightTopBar
+import com.thelightphone.sdk.ui.LightTopBarCenter
+import com.thelightphone.sdk.ui.lightClickable
+import kotlinx.coroutines.delay
+
+private const val DEFAULT_WORK_SEC = 30
+private const val DEFAULT_REST_SEC = 15
+private const val DEFAULT_ROUNDS = 8
+private const val TIME_STEP_SEC = 5
+private const val MIN_TIME_SEC = 5
+private const val MIN_ROUNDS = 1
+
+private enum class IntervalMode { CONFIGURE, ACTIVE }
+private enum class IntervalPhase { WORK, REST }
+
+/**
+ * Mock-up for an interval workout: configure work/rest durations and round count, then run
+ * a live work/rest countdown. Not wired to persistence -- exploring the flow and layout only.
+ */
+class IntervalWorkoutScreen(
+    sealedActivity: SealedLightActivity,
+) : SimpleLightScreen<Unit>(sealedActivity) {
+
+    @Composable
+    override fun Content() {
+        val themeColors by LightThemeController.colors.collectAsState()
+        var mode by remember { mutableStateOf(IntervalMode.CONFIGURE) }
+        var workSeconds by remember { mutableStateOf(DEFAULT_WORK_SEC) }
+        var restSeconds by remember { mutableStateOf(DEFAULT_REST_SEC) }
+        var rounds by remember { mutableStateOf(DEFAULT_ROUNDS) }
+
+        LightTheme(colors = themeColors) {
+            when (mode) {
+                IntervalMode.CONFIGURE -> IntervalConfigureContent(
+                    workSeconds = workSeconds,
+                    restSeconds = restSeconds,
+                    rounds = rounds,
+                    onAdjustWork = { delta -> workSeconds = (workSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
+                    onAdjustRest = { delta -> restSeconds = (restSeconds + delta).coerceAtLeast(MIN_TIME_SEC) },
+                    onAdjustRounds = { delta -> rounds = (rounds + delta).coerceAtLeast(MIN_ROUNDS) },
+                    onBack = { goBack(Unit) },
+                    onStart = { mode = IntervalMode.ACTIVE },
+                )
+
+                IntervalMode.ACTIVE -> IntervalActiveContent(
+                    workSeconds = workSeconds,
+                    restSeconds = restSeconds,
+                    rounds = rounds,
+                    onFinish = { goBack(Unit) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntervalConfigureContent(
+    workSeconds: Int,
+    restSeconds: Int,
+    rounds: Int,
+    onAdjustWork: (Int) -> Unit,
+    onAdjustRest: (Int) -> Unit,
+    onAdjustRounds: (Int) -> Unit,
+    onBack: () -> Unit,
+    onStart: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightThemeTokens.colors.background),
+    ) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Cancel",
+            ),
+            center = LightTopBarCenter.Text("Interval Training"),
+        )
+
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
+            NudgeField(
+                modifier = Modifier.weight(1f),
+                value = workSeconds.toString(),
+                label = "Work (sec)",
+                onIncrement = { onAdjustWork(TIME_STEP_SEC) },
+                onDecrement = { onAdjustWork(-TIME_STEP_SEC) },
+                incrementDescription = "Increase work time",
+                decrementDescription = "Decrease work time",
+            )
+            NudgeField(
+                modifier = Modifier.weight(1f),
+                value = restSeconds.toString(),
+                label = "Rest (sec)",
+                onIncrement = { onAdjustRest(TIME_STEP_SEC) },
+                onDecrement = { onAdjustRest(-TIME_STEP_SEC) },
+                incrementDescription = "Increase rest time",
+                decrementDescription = "Decrease rest time",
+            )
+            NudgeField(
+                modifier = Modifier.weight(1f),
+                value = rounds.toString(),
+                label = "Rounds",
+                onIncrement = { onAdjustRounds(1) },
+                onDecrement = { onAdjustRounds(-1) },
+                incrementDescription = "Increase rounds",
+                decrementDescription = "Decrease rounds",
+            )
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ACCEPT,
+                    onClick = onStart,
+                    contentDescription = "Start interval workout",
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun NudgeField(
+    value: String,
+    label: String,
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
+    incrementDescription: String,
+    decrementDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        LightIcon(
+            icon = LightIcons.UP,
+            contentDescription = incrementDescription,
+            size = 3f,
+            modifier = Modifier.lightClickable(onClick = onIncrement),
+        )
+        LightText(
+            text = value,
+            variant = LightTextVariant.Heading,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        LightText(
+            text = label,
+            variant = LightTextVariant.Detail,
+            lighten = true,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        LightIcon(
+            icon = LightIcons.DOWN,
+            contentDescription = decrementDescription,
+            size = 3f,
+            modifier = Modifier
+                .padding(top = 20.dp)
+                .lightClickable(onClick = onDecrement),
+        )
+    }
+}
+
+@Composable
+private fun IntervalActiveContent(
+    workSeconds: Int,
+    restSeconds: Int,
+    rounds: Int,
+    onFinish: () -> Unit,
+) {
+    var phase by remember { mutableStateOf(IntervalPhase.WORK) }
+    var round by remember { mutableStateOf(1) }
+    var remaining by remember { mutableStateOf(workSeconds) }
+    var isRunning by remember { mutableStateOf(true) }
+    var finished by remember { mutableStateOf(false) }
+
+    fun advance() {
+        when {
+            phase == IntervalPhase.WORK -> {
+                phase = IntervalPhase.REST
+                remaining = restSeconds
+            }
+            round < rounds -> {
+                round++
+                phase = IntervalPhase.WORK
+                remaining = workSeconds
+            }
+            else -> {
+                isRunning = false
+                finished = true
+            }
+        }
+    }
+
+    LaunchedEffect(isRunning) {
+        while (isRunning) {
+            delay(1000)
+            if (remaining > 1) {
+                remaining--
+            } else {
+                advance()
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightThemeTokens.colors.background),
+    ) {
+        LightTopBar(
+            center = LightTopBarCenter.Text("Interval Training"),
+        )
+
+        Column(
+            modifier = Modifier.weight(1f).fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (finished) {
+                LightText(text = "Workout complete", variant = LightTextVariant.Title)
+                LightText(
+                    text = "$rounds rounds done",
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            } else {
+                LightText(
+                    text = if (phase == IntervalPhase.WORK) "Work" else "Rest",
+                    variant = LightTextVariant.Subtitle,
+                    lighten = phase == IntervalPhase.REST,
+                )
+                LightText(
+                    text = formatCountdown(remaining),
+                    variant = LightTextVariant.Title,
+                    monospace = true,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                LightText(
+                    text = "Round $round of $rounds",
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+
+        LightBottomBar(
+            items = if (finished) {
+                listOf(
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.ACCEPT,
+                        onClick = onFinish,
+                        contentDescription = "Finish workout",
+                    ),
+                )
+            } else {
+                listOf(
+                    LightBarButton.LightIcon(
+                        icon = if (isRunning) LightIcons.PAUSE else LightIcons.PLAY,
+                        onClick = { isRunning = !isRunning },
+                        contentDescription = if (isRunning) "Pause" else "Resume",
+                    ),
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.FAST_FORWARD,
+                        onClick = { advance() },
+                        contentDescription = "Skip to next interval",
+                    ),
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.ACCEPT,
+                        onClick = onFinish,
+                        contentDescription = "Finish workout",
+                    ),
+                )
+            },
+        )
+    }
+}
+
+private fun formatCountdown(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}

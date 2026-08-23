@@ -119,17 +119,30 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                             icon = LightIcons.ADD,
                             contentDescription = "Start workout",
                             onClick = {
-                                scope.launch {
-                                    val sessionId = withContext(Dispatchers.IO) {
-                                        viewModel.createAndInsertNewSession()
-                                    }
-                                    openSessionDetail(WorkoutSession(
-                                        id = sessionId,
-                                        name = "",
-                                        date = LocalDate.now(),
-                                        exercises = emptyList(),
-                                    ))
-                                }
+                                navigateTo(screenFactory = { activity ->
+                                    WorkoutStyleScreen(
+                                        sealedActivity = activity,
+                                        onSelectStrength = {
+                                            scope.launch {
+                                                val sessionId = withContext(Dispatchers.IO) {
+                                                    viewModel.createAndInsertNewSession()
+                                                }
+                                                openSessionDetail(WorkoutSession(
+                                                    id = sessionId,
+                                                    name = "",
+                                                    date = LocalDate.now(),
+                                                    exercises = emptyList(),
+                                                ))
+                                            }
+                                        },
+                                        onSelectCardio = {
+                                            navigateTo(screenFactory = { CardioWorkoutScreen(it) })
+                                        },
+                                        onSelectInterval = {
+                                            navigateTo(screenFactory = { IntervalWorkoutScreen(it) })
+                                        },
+                                    )
+                                })
                             },
                         ),
                         LightBarButton.LightIcon(
