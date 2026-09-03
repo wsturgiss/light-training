@@ -61,7 +61,7 @@ enum class CardioEditField { DURATION, DISTANCE }
 
 data class CardioSessionDetailUiState(
     val session: CardioSession? = null,
-    val exerciseName: String = "Cardio",
+    val exerciseName: String = "",
     val trackedFields: Set<TrackedField> = emptySet(),
     val loading: Boolean = true,
     val mode: CardioDetailMode = CardioDetailMode.OVERVIEW,
@@ -327,6 +327,7 @@ private fun CardioSessionOverviewContent(
         if (session != null) {
             LightBottomBar(
                 items = listOf(
+                    null,
                     LightBarButton.LightIcon(
                         icon = LightIcons.SETTINGS,
                         onClick = onManage,

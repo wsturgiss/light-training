@@ -61,7 +61,7 @@ class WorkoutStyleScreen(
                         onClick = { goBack(null) },
                         contentDescription = "Cancel",
                     ),
-                    center = LightTopBarCenter.Text("New Workout"),
+                    center = LightTopBarCenter.Text("New Training Session"),
                 )
 
                 LightScrollView(

@@ -867,7 +867,7 @@ private fun MenuContent(
         Column(modifier = Modifier.weight(1f)) {
             SettingsMenuRow(title = "Muscle Groups", onClick = onMuscleGroups)
             SettingsMenuRow(title = "Exercises", onClick = onExercises)
-            SettingsMenuRow(title = "Interval Schemes", onClick = onIntervalSchemes)
+            SettingsMenuRow(title = "Interval Schemes", subtitle = "Coming soon", enabled = false, onClick = onIntervalSchemes)
             SettingsMenuRow(
                 title = "Weight Unit",
                 value = state.weightUnit.displayName.uppercase(),
@@ -883,15 +883,31 @@ private fun MenuContent(
 }
 
 @Composable
-private fun SettingsMenuRow(title: String, onClick: () -> Unit, value: String? = null) {
+private fun SettingsMenuRow(
+    title: String,
+    onClick: () -> Unit,
+    value: String? = null,
+    subtitle: String? = null,
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .lightClickable(onClick = onClick)
+            .let { if (enabled) it.lightClickable(onClick = onClick) else it }
             .padding(horizontal = 32.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LightText(text = title, variant = LightTextVariant.Copy, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            LightText(text = title, variant = LightTextVariant.Copy, lighten = !enabled)
+            if (subtitle != null) {
+                LightText(
+                    text = subtitle,
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
         if (value != null) {
             LightText(text = value, variant = LightTextVariant.Detail, lighten = true)
         }
