@@ -9,9 +9,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
@@ -30,12 +31,17 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
+import com.thelightphone.training.model.CardioSession
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WorkoutSession
+import com.thelightphone.training.model.distanceUnitFromStorage
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
@@ -44,12 +50,39 @@ import java.util.UUID
 
 private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d")
 
-class HomeScreenViewModel(private val repository: TrainingRepository) : LightViewModel<Unit>() {
+/** Combines logged weight-training sessions and cardio sessions into one home-screen feed,
+ * sorted together by date and then by [createdAt] -- so two sessions logged on the same day
+ * order by when they actually happened, not by an arbitrary DB/merge order. There's no
+ * separate persistence model for this, it's purely a display-time merge of
+ * [TrainingRepository.listSessions] and [TrainingRepository.cardioSessions]. */
+sealed interface LoggedActivity {
+    val date: LocalDate
+    val createdAt: Long
 
-    val sessions = MutableStateFlow<List<WorkoutSession>>(emptyList())
+    data class Weight(val session: WorkoutSession) : LoggedActivity {
+        override val date: LocalDate get() = session.date
+        override val createdAt: Long get() = session.createdAt
+    }
+
+    data class Cardio(val session: CardioSession, val exerciseName: String) : LoggedActivity {
+        override val date: LocalDate get() = session.date
+        override val createdAt: Long get() = session.createdAt
+    }
+}
+
+class HomeScreenViewModel(
+    private val dataStore: DataStore<Preferences>,
+    private val repository: TrainingRepository,
+) : LightViewModel<Unit>() {
+
+    val activities = MutableStateFlow<List<LoggedActivity>>(emptyList())
+    val distanceUnit = MutableStateFlow(DistanceUnit.KM)
 
     init {
         reloadSessions()
+        viewModelScope.launch(Dispatchers.IO) {
+            distanceUnit.value = distanceUnitFromStorage(dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT])
+        }
     }
 
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
@@ -72,7 +105,13 @@ class HomeScreenViewModel(private val repository: TrainingRepository) : LightVie
     private fun reloadSessions() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.ensureSeeded()
-            sessions.value = repository.listSessions()
+            val weightSessions = repository.listSessions().map { LoggedActivity.Weight(it) }
+            val exerciseNames = repository.exercises.first().associate { it.id to it.name }
+            val cardioSessions = repository.cardioSessions.first().map { cardioSession ->
+                LoggedActivity.Cardio(cardioSession, exerciseNames[cardioSession.exerciseId] ?: "Cardio")
+            }
+            activities.value = (weightSessions + cardioSessions)
+                .sortedWith(compareByDescending<LoggedActivity> { it.date }.thenByDescending { it.createdAt })
         }
     }
 }
@@ -81,19 +120,29 @@ class HomeScreenViewModel(private val repository: TrainingRepository) : LightVie
 class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeScreenViewModel>(sealedActivity) {
 
     private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
+        lightContext.buildDatabase(
+            TrainingDatabase::class.java,
+            TrainingRepository.DATABASE_NAME,
+            TrainingDatabase.MIGRATION_2_3,
+            TrainingDatabase.MIGRATION_3_4,
+            TrainingDatabase.MIGRATION_4_5,
+            TrainingDatabase.MIGRATION_5_6,
+            TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
+        )
     }
 
     override val viewModelClass: Class<HomeScreenViewModel>
         get() = HomeScreenViewModel::class.java
 
-    override fun createViewModel(): HomeScreenViewModel = HomeScreenViewModel(repository)
+    override fun createViewModel(): HomeScreenViewModel = HomeScreenViewModel(lightContext.dataStore, repository)
 
     @Composable
     override fun Content() {
-        val sessions by viewModel.sessions.collectAsState()
+        val activities by viewModel.activities.collectAsState()
+        val distanceUnit by viewModel.distanceUnit.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
-        val scope = rememberCoroutineScope()
 
         LightTheme(colors = themeColors) {
             Column(
@@ -106,10 +155,15 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
-                    if (sessions.isEmpty()) {
+                    if (activities.isEmpty()) {
                         EmptyState()
                     } else {
-                        SessionList(sessions, onSessionClick = ::openSessionDetail)
+                        ActivityList(
+                            activities = activities,
+                            distanceUnit = distanceUnit,
+                            onSessionClick = ::openSessionDetail,
+                            onCardioSessionClick = ::openCardioSessionDetail,
+                        )
                     }
                 }
 
@@ -119,17 +173,32 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                             icon = LightIcons.ADD,
                             contentDescription = "Start workout",
                             onClick = {
-                                scope.launch {
-                                    val sessionId = withContext(Dispatchers.IO) {
-                                        viewModel.createAndInsertNewSession()
-                                    }
-                                    openSessionDetail(WorkoutSession(
-                                        id = sessionId,
-                                        name = "",
-                                        date = LocalDate.now(),
-                                        exercises = emptyList(),
-                                    ))
-                                }
+                                navigateTo(
+                                    screenFactory = { WorkoutStyleScreen(it) },
+                                    resultCallback = { choice ->
+                                        when (choice) {
+                                            WorkoutStyleChoice.STRENGTH -> {
+                                                viewModel.viewModelScope.launch {
+                                                    val sessionId = withContext(Dispatchers.IO) {
+                                                        viewModel.createAndInsertNewSession()
+                                                    }
+                                                    openSessionDetail(WorkoutSession(
+                                                        id = sessionId,
+                                                        name = "",
+                                                        date = LocalDate.now(),
+                                                        exercises = emptyList(),
+                                                    ))
+                                                }
+                                            }
+                                            WorkoutStyleChoice.CARDIO -> {
+                                                navigateTo(screenFactory = { CardioWorkoutScreen(it) })
+                                            }
+                                            WorkoutStyleChoice.INTERVAL -> {
+                                                navigateTo(screenFactory = { IntervalWorkoutScreen(it) })
+                                            }
+                                        }
+                                    },
+                                )
                             },
                         ),
                         LightBarButton.LightIcon(
@@ -149,6 +218,10 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
 
     private fun openSessionDetail(session: WorkoutSession) {
         navigateTo(screenFactory = { SessionDetailScreen(it, session.id) })
+    }
+
+    private fun openCardioSessionDetail(session: CardioSession) {
+        navigateTo(screenFactory = { CardioSessionDetailScreen(it, session.id) })
     }
 }
 
@@ -174,14 +247,26 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun SessionList(sessions: List<WorkoutSession>, onSessionClick: (WorkoutSession) -> Unit) {
+private fun ActivityList(
+    activities: List<LoggedActivity>,
+    distanceUnit: DistanceUnit,
+    onSessionClick: (WorkoutSession) -> Unit,
+    onCardioSessionClick: (CardioSession) -> Unit,
+) {
     LightScrollView(
         modifier = Modifier
             .fillMaxSize()
             .padding(UiConstants.SpacedScrollPadding),
     ) {
-        sessions.forEach { session ->
-            SessionRow(session, onClick = { onSessionClick(session) })
+        activities.forEach { activity ->
+            when (activity) {
+                is LoggedActivity.Weight -> SessionRow(activity.session, onClick = { onSessionClick(activity.session) })
+                is LoggedActivity.Cardio -> CardioSessionRow(
+                    activity,
+                    distanceUnit = distanceUnit,
+                    onClick = { onCardioSessionClick(activity.session) },
+                )
+            }
         }
     }
 }
@@ -202,6 +287,36 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
             }
             LightText(
                 text = muscleGroupText,
+                variant = LightTextVariant.Copy,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 16.dp),
+            )
+            LightText(
+                text = session.date.format(dateFormatter),
+                variant = LightTextVariant.Detail,
+                lighten = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CardioSessionRow(activity: LoggedActivity.Cardio, distanceUnit: DistanceUnit, onClick: () -> Unit) {
+    val session = activity.session
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .lightClickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            val details = buildList {
+                add(formatDuration(session.durationSeconds))
+                session.distanceKm?.let { add("${formatDistance(distanceUnit.fromKm(it))} ${distanceUnit.displayName}") }
+            }.joinToString(" · ")
+            LightText(
+                text = "${activity.exerciseName} — $details",
                 variant = LightTextVariant.Copy,
                 modifier = Modifier
                     .weight(1f)

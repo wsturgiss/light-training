@@ -51,18 +51,57 @@ internal interface ExerciseDao {
 }
 
 @Dao
+internal interface IntervalPresetDao {
+    @Query("SELECT * FROM interval_presets ORDER BY name COLLATE NOCASE")
+    fun observeAll(): Flow<List<IntervalPresetEntity>>
+
+    @Insert
+    suspend fun insert(preset: IntervalPresetEntity)
+
+    @Update
+    suspend fun update(preset: IntervalPresetEntity)
+
+    @Query("DELETE FROM interval_presets WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("SELECT COUNT(*) FROM interval_presets")
+    suspend fun count(): Int
+}
+
+@Dao
+internal interface CardioSessionDao {
+    @Query("SELECT * FROM cardio_sessions ORDER BY date DESC, created_at DESC, id DESC")
+    fun observeAll(): Flow<List<CardioSessionEntity>>
+
+    @Insert
+    suspend fun insert(session: CardioSessionEntity)
+
+    @Update
+    suspend fun update(session: CardioSessionEntity)
+
+    @Query("SELECT * FROM cardio_sessions WHERE id = :id")
+    suspend fun getById(id: String): CardioSessionEntity?
+
+    @Query("DELETE FROM cardio_sessions WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("SELECT COUNT(*) FROM cardio_sessions WHERE exercise_id = :exerciseId")
+    suspend fun countByExerciseId(exerciseId: String): Int
+}
+
+@Dao
 internal interface WorkoutSessionDao {
     @Insert
     suspend fun insertSession(session: WorkoutSessionEntity)
 
     @Insert
-    suspend fun insertLoggedExercise(exercise: LoggedExerciseEntity): Long
+    suspend fun insertLoggedWeightExercise(exercise: LoggedWeightExerciseEntity): Long
 
     @Insert
-    suspend fun insertSets(sets: List<ExerciseSetEntity>)
+    suspend fun insertSets(sets: List<WeightSetEntity>)
 
     @Transaction
-    @Query("SELECT * FROM workout_sessions ORDER BY date DESC, id DESC")
+    @Query("SELECT * FROM workout_sessions ORDER BY date DESC, created_at DESC, id DESC")
     suspend fun listSessionsWithExercises(): List<WorkoutSessionWithExercises>
 
     @Transaction
@@ -89,13 +128,13 @@ internal interface WorkoutSessionDao {
     @Transaction
     suspend fun insertFullSession(
         session: WorkoutSessionEntity,
-        exercises: List<Pair<LoggedExerciseEntity, List<ExerciseSetEntity>>>,
+        exercises: List<Pair<LoggedWeightExerciseEntity, List<WeightSetEntity>>>,
     ) {
         insertSession(session)
         exercises.forEach { (exercise, sets) ->
-            val exerciseId = insertLoggedExercise(exercise)
+            val exerciseId = insertLoggedWeightExercise(exercise)
             if (sets.isNotEmpty()) {
-                insertSets(sets.map { it.copy(loggedExerciseId = exerciseId) })
+                insertSets(sets.map { it.copy(loggedWeightExerciseId = exerciseId) })
             }
         }
     }
@@ -104,7 +143,7 @@ internal interface WorkoutSessionDao {
     @Transaction
     suspend fun replaceFullSession(
         session: WorkoutSessionEntity,
-        exercises: List<Pair<LoggedExerciseEntity, List<ExerciseSetEntity>>>,
+        exercises: List<Pair<LoggedWeightExerciseEntity, List<WeightSetEntity>>>,
     ) {
         deleteSetsForSession(session.id)
         deleteExercisesForSession(session.id)

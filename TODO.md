@@ -19,13 +19,17 @@
   - Enhanced empty state in unified overview (0 exercises: "No exercises added yet" + "Tap the add button...").
   - Empty sessions persist in list until explicit TRASH (in manage).
 - [x] Updated navigation / onScreenShow reload paths (home list stays fresh after create/edit/delete).
-- [ ] Clean up: dead code, any now-unused imports, possible light renaming of "Session*" composables.
-- [ ] Manual verification (you build in Android Studio): start workout (goes straight to edit view), add/reorder/delete exercises, delete whole workout, empty sessions in home list, persistence across restarts.
+- [x] Clean up: dead code, any now-unused imports, possible light renaming of "Session*" composables.
+- [x] Manual verification (you build in Android Studio): start workout (goes straight to edit view), add/reorder/delete exercises, delete whole workout, empty sessions in home list, persistence across restarts.
 
 # existing / lower priority
-- [ ] on the workout edit page, it seems like we are wasting space in the bottom toolbar.  I think it might be taller than the toolbar is in other places.  Also, it seems like there is blank space on the right and maybe the left that we could use.  Maybe there is padding there? Can we make the edit page have more space?  It feels a bit cramped
+- [x] NOTE: filed as an upstream issue against the SDK.  on the workout edit page, it seems like we are wasting space in the bottom toolbar.  I think it might be taller than the toolbar is in other places.  Also, it seems like there is blank space on the right and maybe the left that we could use.  Maybe there is padding there? Can we make the edit page have more space?  It feels a bit cramped
+- [x] pace could be calculated if we have duration and distance...maybe users don't need to edit it 
+- [ ] notes on exercises?
+
+# on hold
 #WAIT TO DO THIS STUFF BELOW
 - [ ] Muscle group volume/frequency rollups (e.g. "chest trained 2x this
       week") once enough session data exists.
-- [ ] Cardio support — sessions/exercises that track duration/distance
-      instead of (or alongside) reps+weight.
+- [ ] play with picker wheel selected size...it currently snaps up to the selected size.  Try out a smoother transition to the selected size
+

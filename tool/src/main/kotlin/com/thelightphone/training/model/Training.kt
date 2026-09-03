@@ -4,7 +4,7 @@ import java.time.LocalDate
 
 /**
  * The unit weights are displayed/entered in. Sets are always stored
- * internally in kilograms ([ExerciseSet.weightKg]); this is purely a
+ * internally in kilograms ([WeightSet.weightKg]); this is purely a
  * display/input preference, converted at the UI layer.
  */
 enum class WeightUnit(val displayName: String) {
@@ -31,26 +31,55 @@ enum class WeightUnit(val displayName: String) {
 }
 
 /**
- * A single completed set of an exercise: how many reps, and the weight used.
- * [weightKg] is null for bodyweight-only sets (or cardio-style exercises).
+ * The unit distance is displayed/entered in. Cardio sessions always store
+ * distance internally in kilometers ([CardioSession.distanceKm]); this is
+ * purely a display/input preference, converted at the UI layer.
  */
-data class ExerciseSet(
+enum class DistanceUnit(val displayName: String) {
+    KM("km"),
+    MI("mi");
+
+    /** Converts a value already in this unit into kilometers for storage. */
+    fun toKm(value: Double): Double = when (this) {
+        KM -> value
+        MI -> value * KM_PER_MILE
+    }
+
+    /** Converts a stored kilometer value into this unit for display. */
+    fun fromKm(km: Double): Double = when (this) {
+        KM -> km
+        MI -> km / KM_PER_MILE
+    }
+
+    fun next(): DistanceUnit = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        private const val KM_PER_MILE = 1.609344
+    }
+}
+
+/**
+ * A single completed set of a weight exercise: how many reps, and the weight used.
+ * [weightKg] is null for bodyweight-only sets.
+ */
+data class WeightSet(
     val reps: Int,
     val weightKg: Double?,
 )
 
 /**
- * One exercise performed during a [WorkoutSession], e.g. "Bench Press",
+ * One weight exercise performed during a [WorkoutSession], e.g. "Bench Press",
  * referencing the library [Exercise] it came from via [exerciseId], and
  * carrying the resolved [muscleGroup] (primary) and [secondaryMuscleGroups]
- * populated at load time from the current exercise/muscle-group tables.
+ * populated at load time from the current exercise/muscle-group tables. Cardio
+ * exercises aren't logged this way -- see CardioWorkoutContent.kt / IntervalWorkoutContent.kt.
  */
-data class LoggedExercise(
+data class LoggedWeightExercise(
     val exerciseId: String,
     val name: String,
     val muscleGroup: MuscleGroup,
     val secondaryMuscleGroups: List<MuscleGroup> = emptyList(),
-    val sets: List<ExerciseSet>,
+    val sets: List<WeightSet>,
 ) {
     /** Total reps across all sets. */
     val totalReps: Int
@@ -72,7 +101,10 @@ data class WorkoutSession(
     val id: String,
     val name: String,
     val date: LocalDate,
-    val exercises: List<LoggedExercise>,
+    val exercises: List<LoggedWeightExercise>,
+    /** When this session was created, in epoch millis -- used to order same-day sessions by
+     * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
+    val createdAt: Long = System.currentTimeMillis(),
 ) {
     val muscleGroups: List<MuscleGroup>
         get() = exercises.map { it.muscleGroup }.distinct()
@@ -80,3 +112,22 @@ data class WorkoutSession(
     val totalSets: Int
         get() = exercises.sumOf { it.sets.size }
 }
+
+/**
+ * A single logged cardio or interval result: which exercise, how long it took, and any
+ * optional tracked fields (distance/pace) configured for that exercise. [durationSeconds] is
+ * either typed in by hand or carried over from the in-app timer -- see
+ * [TrainingRepository.insertCardioSession].
+ */
+data class CardioSession(
+    val id: String,
+    val exerciseId: String,
+    val date: LocalDate,
+    val durationSeconds: Int,
+    /** Distance, always stored in kilometers regardless of the user's display [DistanceUnit]. */
+    val distanceKm: Double? = null,
+    val pace: String? = null,
+    /** When this session was created, in epoch millis -- used to order same-day sessions by
+     * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
+    val createdAt: Long = System.currentTimeMillis(),
+)

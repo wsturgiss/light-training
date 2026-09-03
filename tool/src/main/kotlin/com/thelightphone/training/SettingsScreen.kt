@@ -1,6 +1,7 @@
 package com.thelightphone.training
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,12 +41,16 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.sdk.buildDatabase
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.Exercise
+import com.thelightphone.training.model.IntervalScheme
 import com.thelightphone.training.model.MuscleGroup
+import com.thelightphone.training.model.TrackedField
 import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WeightUnit
+import com.thelightphone.training.model.distanceUnitFromStorage
 import com.thelightphone.training.model.weightUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +101,22 @@ sealed class SettingsMode {
     /** Multi-select: change an existing exercise's secondary muscle groups
      * from the detail view. */
     data object ExerciseDetailEditSecondaryGroups : SettingsMode()
+
+    /** Multi-select: change which extra data points (distance, pace, ...) a cardio
+     * exercise offers when logging it. Only reachable for exercises in the Cardio
+     * muscle group. */
+    data object ExerciseDetailEditTrackedFields : SettingsMode()
+
+    /** List of user-defined interval schemes, with add/rename/configure/delete. */
+    data object IntervalSchemeList : SettingsMode()
+
+    /** Text entry for a scheme's name (add, or rename an existing scheme
+     * tapped from the list). */
+    data object IntervalSchemeName : SettingsMode()
+
+    /** Nudge-arrow entry for a scheme's work/rest/rounds (add, or tapping
+     * an existing scheme's row to edit its numbers). */
+    data object IntervalSchemeConfigure : SettingsMode()
 }
 
 data class SettingsUiState(
@@ -108,11 +129,29 @@ data class SettingsUiState(
     val draftExerciseName: String = "",
     val draftPrimaryMuscleGroupId: String? = null,
     val draftSecondaryMuscleGroupIds: Set<String> = emptySet(),
+    val draftTrackedFields: Set<TrackedField> = emptySet(),
     val weightUnit: WeightUnit = WeightUnit.KG,
+    val distanceUnit: DistanceUnit = DistanceUnit.KM,
+    val intervalSchemes: List<IntervalScheme> = emptyList(),
+    val draftSchemeId: String? = null,
+    val draftSchemeName: String = "",
+    val draftSchemeWorkSeconds: Int = DEFAULT_SCHEME_WORK_SEC,
+    val draftSchemeRestSeconds: Int = DEFAULT_SCHEME_REST_SEC,
+    val draftSchemeRounds: Int = DEFAULT_SCHEME_ROUNDS,
     val errorModal: String? = null,
 ) {
     val isEditingMuscleGroup: Boolean get() = draftMuscleGroupId != null
+    val isEditingScheme: Boolean get() = draftSchemeId != null
 }
+
+private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
+
+private const val DEFAULT_SCHEME_WORK_SEC = 30
+private const val DEFAULT_SCHEME_REST_SEC = 15
+private const val DEFAULT_SCHEME_ROUNDS = 8
+private const val SCHEME_TIME_STEP_SEC = 5
+private const val MIN_SCHEME_TIME_SEC = 5
+private const val MIN_SCHEME_ROUNDS = 1
 
 class SettingsViewModel(
     private val dataStore: DataStore<Preferences>,
@@ -136,9 +175,18 @@ class SettingsViewModel(
                 _uiState.value = _uiState.value.copy(exercises = exercises)
             }
         }
+        viewModelScope.launch {
+            repository.intervalSchemes.collect { schemes ->
+                _uiState.value = _uiState.value.copy(intervalSchemes = schemes)
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             val unit = weightUnitFromStorage(dataStore.data.first()[TrainingPreferences.WEIGHT_UNIT])
             _uiState.update { it.copy(weightUnit = unit) }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val unit = distanceUnitFromStorage(dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT])
+            _uiState.update { it.copy(distanceUnit = unit) }
         }
     }
 
@@ -150,6 +198,14 @@ class SettingsViewModel(
         }
     }
 
+    fun toggleDistanceUnit() {
+        val next = _uiState.value.distanceUnit.next()
+        _uiState.update { it.copy(distanceUnit = next) }
+        viewModelScope.launch(Dispatchers.IO) {
+            dataStore.edit { prefs -> prefs[TrainingPreferences.DISTANCE_UNIT] = next.name }
+        }
+    }
+
     // --- Navigation between sub-screens ---
 
     fun goToMuscleGroups() {
@@ -158,6 +214,10 @@ class SettingsViewModel(
 
     fun goToExercises() {
         _uiState.value = _uiState.value.copy(mode = SettingsMode.ExerciseList)
+    }
+
+    fun goToIntervalSchemes() {
+        _uiState.value = _uiState.value.copy(mode = SettingsMode.IntervalSchemeList)
     }
 
     fun backToMenu() {
@@ -226,6 +286,7 @@ class SettingsViewModel(
                         name = exercise.name,
                         primaryMuscleGroupId = exercise.primaryMuscleGroupId,
                         secondaryMuscleGroupIds = exercise.secondaryMuscleGroupIds - id,
+                        trackedFields = exercise.trackedFields,
                     )
                 }
             }
@@ -241,6 +302,7 @@ class SettingsViewModel(
             draftExerciseName = "",
             draftPrimaryMuscleGroupId = null,
             draftSecondaryMuscleGroupIds = emptySet(),
+            draftTrackedFields = emptySet(),
         )
     }
 
@@ -253,6 +315,7 @@ class SettingsViewModel(
             draftExerciseName = exercise.name,
             draftPrimaryMuscleGroupId = exercise.primaryMuscleGroupId,
             draftSecondaryMuscleGroupIds = exercise.secondaryMuscleGroupIds.toSet(),
+            draftTrackedFields = exercise.trackedFields,
         )
     }
 
@@ -351,6 +414,7 @@ class SettingsViewModel(
                     name = name,
                     primaryMuscleGroupId = primaryId,
                     secondaryMuscleGroupIds = state.draftSecondaryMuscleGroupIds.toList(),
+                    trackedFields = state.draftTrackedFields,
                 )
             }
         }
@@ -389,6 +453,7 @@ class SettingsViewModel(
                 name = state.draftExerciseName,
                 primaryMuscleGroupId = primaryId,
                 secondaryMuscleGroupIds = state.draftSecondaryMuscleGroupIds.toList(),
+                trackedFields = state.draftTrackedFields,
             )
         }
         _uiState.value = state.copy(mode = SettingsMode.ExerciseDetail)
@@ -416,9 +481,37 @@ class SettingsViewModel(
                 name = state.draftExerciseName,
                 primaryMuscleGroupId = primaryId,
                 secondaryMuscleGroupIds = newSecondary.toList(),
+                trackedFields = state.draftTrackedFields,
             )
         }
         _uiState.value = state.copy(draftSecondaryMuscleGroupIds = newSecondary)
+    }
+
+    fun startEditExerciseDetailTrackedFields() {
+        _uiState.value = _uiState.value.copy(mode = SettingsMode.ExerciseDetailEditTrackedFields)
+    }
+
+    fun doneEditExerciseDetailTrackedFields() {
+        _uiState.value = _uiState.value.copy(mode = SettingsMode.ExerciseDetail)
+    }
+
+    fun toggleExerciseDetailTrackedField(field: TrackedField) {
+        val state = _uiState.value
+        val exerciseId = state.draftExerciseId ?: return
+        val primaryId = state.draftPrimaryMuscleGroupId ?: return
+        val newTrackedFields = state.draftTrackedFields.let { fields ->
+            if (field in fields) fields - field else fields + field
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateExercise(
+                id = exerciseId,
+                name = state.draftExerciseName,
+                primaryMuscleGroupId = primaryId,
+                secondaryMuscleGroupIds = state.draftSecondaryMuscleGroupIds.toList(),
+                trackedFields = newTrackedFields,
+            )
+        }
+        _uiState.value = state.copy(draftTrackedFields = newTrackedFields)
     }
 
     fun removeExerciseFromDetail() {
@@ -438,6 +531,125 @@ class SettingsViewModel(
     fun dismissError() {
         _uiState.value = _uiState.value.copy(errorModal = null)
     }
+
+    // --- Interval schemes ---
+
+    fun startAddIntervalScheme() {
+        _uiState.value = _uiState.value.copy(
+            mode = SettingsMode.IntervalSchemeName,
+            draftSchemeId = null,
+            draftSchemeName = "",
+            draftSchemeWorkSeconds = DEFAULT_SCHEME_WORK_SEC,
+            draftSchemeRestSeconds = DEFAULT_SCHEME_REST_SEC,
+            draftSchemeRounds = DEFAULT_SCHEME_ROUNDS,
+        )
+    }
+
+    fun cancelIntervalSchemeName() {
+        _uiState.value = _uiState.value.copy(mode = SettingsMode.IntervalSchemeList)
+    }
+
+    /** New schemes go name -> configure -> saved. Renaming an existing scheme (via the
+     * list row's pencil icon) saves immediately and returns to the list. */
+    fun submitIntervalSchemeName(rawName: CharSequence) {
+        val name = rawName.toString().trim()
+        if (name.isEmpty()) {
+            _uiState.value = _uiState.value.copy(errorModal = "Please enter a scheme name.")
+            return
+        }
+        val state = _uiState.value
+        val draftId = state.draftSchemeId
+        if (draftId == null) {
+            _uiState.value = state.copy(draftSchemeName = name, mode = SettingsMode.IntervalSchemeConfigure)
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.updateIntervalScheme(
+                    id = draftId,
+                    name = name,
+                    workSeconds = state.draftSchemeWorkSeconds,
+                    restSeconds = state.draftSchemeRestSeconds,
+                    rounds = state.draftSchemeRounds,
+                )
+            }
+            _uiState.value = state.copy(draftSchemeName = name, mode = SettingsMode.IntervalSchemeList)
+        }
+    }
+
+    /** Tapping the pencil on an existing scheme opens the rename text field directly. */
+    fun startEditIntervalSchemeName(scheme: IntervalScheme) {
+        _uiState.value = _uiState.value.copy(
+            mode = SettingsMode.IntervalSchemeName,
+            draftSchemeId = scheme.id,
+            draftSchemeName = scheme.name,
+            draftSchemeWorkSeconds = scheme.workSeconds,
+            draftSchemeRestSeconds = scheme.restSeconds,
+            draftSchemeRounds = scheme.rounds,
+        )
+    }
+
+    /** Tapping a scheme's row body opens its work/rest/rounds for editing. */
+    fun startConfigureIntervalScheme(scheme: IntervalScheme) {
+        _uiState.value = _uiState.value.copy(
+            mode = SettingsMode.IntervalSchemeConfigure,
+            draftSchemeId = scheme.id,
+            draftSchemeName = scheme.name,
+            draftSchemeWorkSeconds = scheme.workSeconds,
+            draftSchemeRestSeconds = scheme.restSeconds,
+            draftSchemeRounds = scheme.rounds,
+        )
+    }
+
+    fun adjustDraftSchemeWork(delta: Int) {
+        _uiState.value = _uiState.value.let {
+            it.copy(draftSchemeWorkSeconds = (it.draftSchemeWorkSeconds + delta).coerceAtLeast(MIN_SCHEME_TIME_SEC))
+        }
+    }
+
+    fun adjustDraftSchemeRest(delta: Int) {
+        _uiState.value = _uiState.value.let {
+            it.copy(draftSchemeRestSeconds = (it.draftSchemeRestSeconds + delta).coerceAtLeast(MIN_SCHEME_TIME_SEC))
+        }
+    }
+
+    fun adjustDraftSchemeRounds(delta: Int) {
+        _uiState.value = _uiState.value.let {
+            it.copy(draftSchemeRounds = (it.draftSchemeRounds + delta).coerceAtLeast(MIN_SCHEME_ROUNDS))
+        }
+    }
+
+    fun cancelIntervalSchemeConfigure() {
+        _uiState.value = _uiState.value.copy(mode = SettingsMode.IntervalSchemeList)
+    }
+
+    fun saveIntervalScheme() {
+        val state = _uiState.value
+        val draftId = state.draftSchemeId
+        viewModelScope.launch(Dispatchers.IO) {
+            if (draftId == null) {
+                repository.addIntervalScheme(
+                    name = state.draftSchemeName,
+                    workSeconds = state.draftSchemeWorkSeconds,
+                    restSeconds = state.draftSchemeRestSeconds,
+                    rounds = state.draftSchemeRounds,
+                )
+            } else {
+                repository.updateIntervalScheme(
+                    id = draftId,
+                    name = state.draftSchemeName,
+                    workSeconds = state.draftSchemeWorkSeconds,
+                    restSeconds = state.draftSchemeRestSeconds,
+                    rounds = state.draftSchemeRounds,
+                )
+            }
+        }
+        _uiState.value = state.copy(mode = SettingsMode.IntervalSchemeList)
+    }
+
+    fun removeIntervalScheme(scheme: IntervalScheme) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.removeIntervalScheme(scheme.id)
+        }
+    }
 }
 
 class SettingsScreen(
@@ -448,7 +660,17 @@ class SettingsScreen(
         get() = SettingsViewModel::class.java
 
     private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
+        lightContext.buildDatabase(
+            TrainingDatabase::class.java,
+            TrainingRepository.DATABASE_NAME,
+            TrainingDatabase.MIGRATION_2_3,
+            TrainingDatabase.MIGRATION_3_4,
+            TrainingDatabase.MIGRATION_4_5,
+            TrainingDatabase.MIGRATION_5_6,
+            TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
+        )
     }
 
     override fun createViewModel(): SettingsViewModel = SettingsViewModel(lightContext.dataStore, repository)
@@ -468,6 +690,9 @@ class SettingsScreen(
         val exerciseDetailNameFieldState = remember(state.mode, state.draftExerciseId) {
             TextFieldState(state.draftExerciseName)
         }
+        val schemeNameFieldState = remember(state.mode, state.draftSchemeId) {
+            TextFieldState(state.draftSchemeName)
+        }
 
         LightTheme(colors = themeColors) {
             Box(
@@ -481,7 +706,9 @@ class SettingsScreen(
                         onBack = { goBack(Unit) },
                         onMuscleGroups = viewModel::goToMuscleGroups,
                         onExercises = viewModel::goToExercises,
+                        onIntervalSchemes = viewModel::goToIntervalSchemes,
                         onToggleWeightUnit = viewModel::toggleWeightUnit,
+                        onToggleDistanceUnit = viewModel::toggleDistanceUnit,
                     )
 
                     SettingsMode.MuscleGroupList -> MuscleGroupListContent(
@@ -542,6 +769,7 @@ class SettingsScreen(
                         onEditName = viewModel::startEditExerciseDetailName,
                         onEditPrimaryGroup = viewModel::startEditExerciseDetailPrimaryGroup,
                         onEditSecondaryGroups = viewModel::startEditExerciseDetailSecondaryGroups,
+                        onEditTrackedFields = viewModel::startEditExerciseDetailTrackedFields,
                         onDelete = viewModel::removeExerciseFromDetail,
                     )
 
@@ -571,6 +799,41 @@ class SettingsScreen(
                         onToggle = viewModel::toggleExerciseDetailSecondaryMuscleGroup,
                         onDone = viewModel::doneEditExerciseDetailSecondaryGroups,
                     )
+
+                    SettingsMode.ExerciseDetailEditTrackedFields -> TrackedFieldMultiSelectContent(
+                        selectedFields = state.draftTrackedFields,
+                        onBack = viewModel::doneEditExerciseDetailTrackedFields,
+                        onToggle = viewModel::toggleExerciseDetailTrackedField,
+                        onDone = viewModel::doneEditExerciseDetailTrackedFields,
+                    )
+
+                    SettingsMode.IntervalSchemeList -> IntervalSchemeListContent(
+                        state = state,
+                        onBack = viewModel::backToMenu,
+                        onAdd = viewModel::startAddIntervalScheme,
+                        onConfigure = viewModel::startConfigureIntervalScheme,
+                        onRename = viewModel::startEditIntervalSchemeName,
+                        onDelete = viewModel::removeIntervalScheme,
+                    )
+
+                    SettingsMode.IntervalSchemeName -> LightTextInputEditor(
+                        title = if (state.isEditingScheme) "Rename scheme" else "New scheme",
+                        state = schemeNameFieldState,
+                        keyboardOptionsFlow = keyboardOptionsFlow,
+                        onSubmit = viewModel::submitIntervalSchemeName,
+                        onBack = viewModel::cancelIntervalSchemeName,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    SettingsMode.IntervalSchemeConfigure -> IntervalSchemeConfigureContent(
+                        state = state,
+                        onAdjustWork = viewModel::adjustDraftSchemeWork,
+                        onAdjustRest = viewModel::adjustDraftSchemeRest,
+                        onAdjustRounds = viewModel::adjustDraftSchemeRounds,
+                        onBack = viewModel::cancelIntervalSchemeConfigure,
+                        onSave = viewModel::saveIntervalScheme,
+                    )
                 }
 
                 state.errorModal?.let { message ->
@@ -587,7 +850,9 @@ private fun MenuContent(
     onBack: () -> Unit,
     onMuscleGroups: () -> Unit,
     onExercises: () -> Unit,
+    onIntervalSchemes: () -> Unit,
     onToggleWeightUnit: () -> Unit,
+    onToggleDistanceUnit: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -602,25 +867,47 @@ private fun MenuContent(
         Column(modifier = Modifier.weight(1f)) {
             SettingsMenuRow(title = "Muscle Groups", onClick = onMuscleGroups)
             SettingsMenuRow(title = "Exercises", onClick = onExercises)
+            SettingsMenuRow(title = "Interval Schemes", subtitle = "Coming soon", enabled = false, onClick = onIntervalSchemes)
             SettingsMenuRow(
                 title = "Weight Unit",
                 value = state.weightUnit.displayName.uppercase(),
                 onClick = onToggleWeightUnit,
+            )
+            SettingsMenuRow(
+                title = "Distance Unit",
+                value = state.distanceUnit.displayName.uppercase(),
+                onClick = onToggleDistanceUnit,
             )
         }
     }
 }
 
 @Composable
-private fun SettingsMenuRow(title: String, onClick: () -> Unit, value: String? = null) {
+private fun SettingsMenuRow(
+    title: String,
+    onClick: () -> Unit,
+    value: String? = null,
+    subtitle: String? = null,
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .lightClickable(onClick = onClick)
+            .let { if (enabled) it.lightClickable(onClick = onClick) else it }
             .padding(horizontal = 32.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LightText(text = title, variant = LightTextVariant.Copy, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            LightText(text = title, variant = LightTextVariant.Copy, lighten = !enabled)
+            if (subtitle != null) {
+                LightText(
+                    text = subtitle,
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
         if (value != null) {
             LightText(text = value, variant = LightTextVariant.Detail, lighten = true)
         }
@@ -780,13 +1067,21 @@ private fun ExerciseDetailContent(
     onEditName: () -> Unit,
     onEditPrimaryGroup: () -> Unit,
     onEditSecondaryGroups: () -> Unit,
+    onEditTrackedFields: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val muscleGroupsById = state.muscleGroups.associateBy { it.id }
-    val primaryName = muscleGroupsById[state.draftPrimaryMuscleGroupId]?.name ?: "None"
+    val primaryGroup = muscleGroupsById[state.draftPrimaryMuscleGroupId]
+    val primaryName = primaryGroup?.name ?: "None"
     val secondaryNames = state.draftSecondaryMuscleGroupIds
         .mapNotNull { muscleGroupsById[it]?.name }
     val secondaryText = if (secondaryNames.isEmpty()) "None" else secondaryNames.joinToString(", ")
+    val isCardio = primaryGroup?.name?.equals(CARDIO_MUSCLE_GROUP_NAME, ignoreCase = true) == true
+    val trackedFieldsText = if (state.draftTrackedFields.isEmpty()) {
+        "None"
+    } else {
+        state.draftTrackedFields.joinToString(", ") { it.displayName }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -814,6 +1109,13 @@ private fun ExerciseDetailContent(
                 label = secondaryText,
                 onClick = onEditSecondaryGroups,
             )
+            if (isCardio) {
+                LightEditableRow(
+                    superscript = "Track",
+                    label = trackedFieldsText,
+                    onClick = onEditTrackedFields,
+                )
+            }
         }
 
         LightBottomBar(
@@ -930,6 +1232,45 @@ private fun MuscleGroupMultiSelectContent(
 }
 
 @Composable
+private fun TrackedFieldMultiSelectContent(
+    selectedFields: Set<TrackedField>,
+    onBack: () -> Unit,
+    onToggle: (TrackedField) -> Unit,
+    onDone: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Track"),
+        )
+
+        LightScrollView(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(UiConstants.SpacedScrollPadding),
+        ) {
+            TrackedField.entries.forEach { field ->
+                SelectableRow(
+                    title = field.displayName,
+                    selected = field in selectedFields,
+                    onClick = { onToggle(field) },
+                )
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.Text(text = "DONE", onClick = onDone),
+            ),
+        )
+    }
+}
+
+@Composable
 private fun SelectableRow(
     title: String,
     selected: Boolean,
@@ -959,6 +1300,209 @@ private fun EmptyListMessage(title: String, detail: String) {
             variant = LightTextVariant.Detail,
             lighten = true,
             modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun IntervalSchemeListContent(
+    state: SettingsUiState,
+    onBack: () -> Unit,
+    onAdd: () -> Unit,
+    onConfigure: (IntervalScheme) -> Unit,
+    onRename: (IntervalScheme) -> Unit,
+    onDelete: (IntervalScheme) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Interval Schemes"),
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            if (state.intervalSchemes.isEmpty()) {
+                EmptyListMessage(
+                    "No schemes yet",
+                    "Tap the add button below to create one, e.g. your own Tabata variant.",
+                )
+            } else {
+                LightScrollView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(UiConstants.DenseScrollPadding),
+                ) {
+                    state.intervalSchemes.forEach { scheme ->
+                        IntervalSchemeRow(
+                            scheme = scheme,
+                            onConfigure = { onConfigure(scheme) },
+                            onRename = { onRename(scheme) },
+                            onDelete = { onDelete(scheme) },
+                        )
+                    }
+                }
+            }
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ADD,
+                    onClick = onAdd,
+                    contentDescription = "Add interval scheme",
+                ),
+            ),
+        )
+    }
+}
+
+/** A scheme's name and work/rest/rounds summary, with a pencil to rename it and a trash icon
+ * to delete it; tapping the row body itself opens its numbers for editing. */
+@Composable
+private fun IntervalSchemeRow(
+    scheme: IntervalScheme,
+    onConfigure: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .lightClickable(onClick = onConfigure)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            LightText(text = scheme.name, variant = LightTextVariant.Copy)
+            LightText(
+                text = formatSchemeSubtitle(scheme),
+                variant = LightTextVariant.Detail,
+                lighten = true,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        LightIcon(
+            icon = LightIcons.PENCIL,
+            size = 2f,
+            contentDescription = "Rename ${scheme.name}",
+            modifier = Modifier
+                .lightClickable(onClick = onRename)
+                .padding(end = 16.dp),
+        )
+        LightIcon(
+            icon = LightIcons.TRASH,
+            size = 2f,
+            contentDescription = "Delete ${scheme.name}",
+            modifier = Modifier.lightClickable(onClick = onDelete),
+        )
+    }
+}
+
+@Composable
+private fun IntervalSchemeConfigureContent(
+    state: SettingsUiState,
+    onAdjustWork: (Int) -> Unit,
+    onAdjustRest: (Int) -> Unit,
+    onAdjustRounds: (Int) -> Unit,
+    onBack: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Cancel",
+            ),
+            center = LightTopBarCenter.Text(state.draftSchemeName),
+        )
+
+        Row(
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
+            SchemeNudgeField(
+                modifier = Modifier.weight(1f),
+                value = state.draftSchemeWorkSeconds.toString(),
+                label = "Work (sec)",
+                onIncrement = { onAdjustWork(SCHEME_TIME_STEP_SEC) },
+                onDecrement = { onAdjustWork(-SCHEME_TIME_STEP_SEC) },
+                incrementDescription = "Increase work time",
+                decrementDescription = "Decrease work time",
+            )
+            SchemeNudgeField(
+                modifier = Modifier.weight(1f),
+                value = state.draftSchemeRestSeconds.toString(),
+                label = "Rest (sec)",
+                onIncrement = { onAdjustRest(SCHEME_TIME_STEP_SEC) },
+                onDecrement = { onAdjustRest(-SCHEME_TIME_STEP_SEC) },
+                incrementDescription = "Increase rest time",
+                decrementDescription = "Decrease rest time",
+            )
+            SchemeNudgeField(
+                modifier = Modifier.weight(1f),
+                value = state.draftSchemeRounds.toString(),
+                label = "Rounds",
+                onIncrement = { onAdjustRounds(1) },
+                onDecrement = { onAdjustRounds(-1) },
+                incrementDescription = "Increase rounds",
+                decrementDescription = "Decrease rounds",
+            )
+        }
+
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.LightIcon(
+                    icon = LightIcons.ACCEPT,
+                    onClick = onSave,
+                    contentDescription = "Save scheme",
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun SchemeNudgeField(
+    value: String,
+    label: String,
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
+    incrementDescription: String,
+    decrementDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        LightIcon(
+            icon = LightIcons.UP,
+            contentDescription = incrementDescription,
+            size = 3f,
+            modifier = Modifier.lightClickable(onClick = onIncrement),
+        )
+        LightText(
+            text = value,
+            variant = LightTextVariant.Heading,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        LightText(
+            text = label,
+            variant = LightTextVariant.Detail,
+            lighten = true,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        LightIcon(
+            icon = LightIcons.DOWN,
+            contentDescription = decrementDescription,
+            size = 3f,
+            modifier = Modifier
+                .padding(top = 20.dp)
+                .lightClickable(onClick = onDecrement),
         )
     }
 }
