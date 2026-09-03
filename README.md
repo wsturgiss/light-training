@@ -3,9 +3,9 @@ a tool for tracking lifting and cardio workouts built with the light-sdk for the
 
 ## Screenshots
 
-| | |
-|---|---|
-| ![App screenshot 1](./docs/images/screenshot1.png) | ![App screenshot 2](./docs/images/screenshot2.png) |
+| | | |
+|---|---|---|
+| ![App screenshot 1](./docs/images/screenshot1.png) | ![App screenshot 2](./docs/images/screenshot2.png) | ![App screenshot 3](./docs/images/screenshot3.png) |
 
 ## Roadmap
 
