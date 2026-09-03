@@ -28,16 +28,21 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 
+/** Which style of workout the user picked on [WorkoutStyleScreen]. */
+enum class WorkoutStyleChoice { STRENGTH, CARDIO, INTERVAL }
+
 /**
  * Lets the user pick which style of workout to start. Strength training reuses the existing
  * session flow; cardio and interval are mock-up flows exploring a new layout direction.
+ *
+ * Delivers the choice back to whoever navigated here (via [goBack]/[SimpleLightScreen]'s result
+ * callback) instead of navigating onward itself -- that way this screen pops off the back stack
+ * *before* the chosen workout screen goes on, so finishing e.g. a cardio session returns
+ * straight to the caller (typically the home screen) instead of back through this picker.
  */
 class WorkoutStyleScreen(
     sealedActivity: SealedLightActivity,
-    private val onSelectStrength: () -> Unit,
-    private val onSelectCardio: () -> Unit,
-    private val onSelectInterval: () -> Unit,
-) : SimpleLightScreen<Unit>(sealedActivity) {
+) : SimpleLightScreen<WorkoutStyleChoice>(sealedActivity) {
 
     @Composable
     override fun Content() {
@@ -52,7 +57,7 @@ class WorkoutStyleScreen(
                 LightTopBar(
                     leftButton = LightBarButton.LightIcon(
                         icon = LightIcons.BACK,
-                        onClick = { goBack(Unit) },
+                        onClick = { goBack(null) },
                         contentDescription = "Cancel",
                     ),
                     center = LightTopBarCenter.Text("New Workout"),
@@ -67,19 +72,19 @@ class WorkoutStyleScreen(
                         icon = LightIcons.LARGE_LIST,
                         title = "Strength Training",
                         subtitle = "Log exercises, sets, and weights",
-                        onClick = onSelectStrength,
+                        onClick = { goBack(WorkoutStyleChoice.STRENGTH) },
                     )
                     WorkoutStyleRow(
                         icon = LightIcons.LOOP,
                         title = "Steady-State Cardio",
                         subtitle = "Track one continuous effort by duration",
-                        onClick = onSelectCardio,
+                        onClick = { goBack(WorkoutStyleChoice.CARDIO) },
                     )
                     WorkoutStyleRow(
                         icon = LightIcons.ALARM,
                         title = "Interval Training",
                         subtitle = "Alternate work and rest for a set number of rounds",
-                        onClick = onSelectInterval,
+                        onClick = { goBack(WorkoutStyleChoice.INTERVAL) },
                     )
                 }
             }

@@ -4,7 +4,7 @@ import java.time.LocalDate
 
 /**
  * The unit weights are displayed/entered in. Sets are always stored
- * internally in kilograms ([ExerciseSet.weightKg]); this is purely a
+ * internally in kilograms ([WeightSet.weightKg]); this is purely a
  * display/input preference, converted at the UI layer.
  */
 enum class WeightUnit(val displayName: String) {
@@ -31,26 +31,27 @@ enum class WeightUnit(val displayName: String) {
 }
 
 /**
- * A single completed set of an exercise: how many reps, and the weight used.
- * [weightKg] is null for bodyweight-only sets (or cardio-style exercises).
+ * A single completed set of a weight exercise: how many reps, and the weight used.
+ * [weightKg] is null for bodyweight-only sets.
  */
-data class ExerciseSet(
+data class WeightSet(
     val reps: Int,
     val weightKg: Double?,
 )
 
 /**
- * One exercise performed during a [WorkoutSession], e.g. "Bench Press",
+ * One weight exercise performed during a [WorkoutSession], e.g. "Bench Press",
  * referencing the library [Exercise] it came from via [exerciseId], and
  * carrying the resolved [muscleGroup] (primary) and [secondaryMuscleGroups]
- * populated at load time from the current exercise/muscle-group tables.
+ * populated at load time from the current exercise/muscle-group tables. Cardio
+ * exercises aren't logged this way -- see CardioWorkoutContent.kt / IntervalWorkoutContent.kt.
  */
-data class LoggedExercise(
+data class LoggedWeightExercise(
     val exerciseId: String,
     val name: String,
     val muscleGroup: MuscleGroup,
     val secondaryMuscleGroups: List<MuscleGroup> = emptyList(),
-    val sets: List<ExerciseSet>,
+    val sets: List<WeightSet>,
 ) {
     /** Total reps across all sets. */
     val totalReps: Int
@@ -72,7 +73,10 @@ data class WorkoutSession(
     val id: String,
     val name: String,
     val date: LocalDate,
-    val exercises: List<LoggedExercise>,
+    val exercises: List<LoggedWeightExercise>,
+    /** When this session was created, in epoch millis -- used to order same-day sessions by
+     * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
+    val createdAt: Long = System.currentTimeMillis(),
 ) {
     val muscleGroups: List<MuscleGroup>
         get() = exercises.map { it.muscleGroup }.distinct()
@@ -80,3 +84,21 @@ data class WorkoutSession(
     val totalSets: Int
         get() = exercises.sumOf { it.sets.size }
 }
+
+/**
+ * A single logged cardio or interval result: which exercise, how long it took, and any
+ * optional tracked fields (distance/pace) configured for that exercise. [durationSeconds] is
+ * either typed in by hand or carried over from the in-app timer -- see
+ * [TrainingRepository.insertCardioSession].
+ */
+data class CardioSession(
+    val id: String,
+    val exerciseId: String,
+    val date: LocalDate,
+    val durationSeconds: Int,
+    val distance: String? = null,
+    val pace: String? = null,
+    /** When this session was created, in epoch millis -- used to order same-day sessions by
+     * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
+    val createdAt: Long = System.currentTimeMillis(),
+)

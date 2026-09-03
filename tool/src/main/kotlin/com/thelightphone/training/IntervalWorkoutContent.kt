@@ -35,6 +35,7 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.training.model.Exercise
+import com.thelightphone.training.model.IntervalScheme
 import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingRepository
 import kotlinx.coroutines.Dispatchers
@@ -53,40 +54,12 @@ private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 private enum class IntervalMode { SELECT_EXERCISE, SELECT_PRESET, CONFIGURE, ACTIVE }
 private enum class IntervalPhase { WORK, REST }
 
-/** A starting point for the work/rest/rounds fields on the configure screen. */
-private enum class IntervalPreset(
-    val title: String,
-    val subtitle: String,
-    val icon: LightIconConfiguration,
-    val workSeconds: Int,
-    val restSeconds: Int,
-    val rounds: Int,
-) {
-    TABATA(
-        title = "Tabata",
-        subtitle = "20 sec work, 10 sec rest, 8 rounds",
-        icon = LightIcons.ALARM,
-        workSeconds = 20,
-        restSeconds = 10,
-        rounds = 8,
-    ),
-    NORDIC_4X4(
-        title = "Nordic 4x4",
-        subtitle = "4 min work, 3 min rest, 4 rounds",
-        icon = LightIcons.LOOP,
-        workSeconds = 240,
-        restSeconds = 180,
-        rounds = 4,
-    ),
-    CUSTOM(
-        title = "Custom",
-        subtitle = "Set your own work, rest, and rounds",
-        icon = LightIcons.LARGE_LIST,
-        workSeconds = DEFAULT_WORK_SEC,
-        restSeconds = DEFAULT_REST_SEC,
-        rounds = DEFAULT_ROUNDS,
-    ),
-}
+/** The one non-persisted picker entry: start from the same defaults as everything else, and
+ * let the user tweak them by hand on the configure screen. Tabata, Nordic 4x4, and HIIT
+ * 30/30 are seeded as real (editable/deletable) [IntervalScheme] rows instead of being
+ * hardcoded here -- see [TrainingRepository.ensureSeeded]. */
+private const val CUSTOM_PRESET_TITLE = "Custom"
+private const val CUSTOM_PRESET_SUBTITLE = "Set your own work, rest, and rounds"
 
 /**
  * Mock-up for an interval workout: pick which cardio exercise, configure work/rest durations
@@ -98,7 +71,15 @@ class IntervalWorkoutScreen(
 ) : SimpleLightScreen<Unit>(sealedActivity) {
 
     private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
+        lightContext.buildDatabase(
+            TrainingDatabase::class.java,
+            TrainingRepository.DATABASE_NAME,
+            TrainingDatabase.MIGRATION_2_3,
+            TrainingDatabase.MIGRATION_3_4,
+            TrainingDatabase.MIGRATION_4_5,
+            TrainingDatabase.MIGRATION_5_6,
+            TrainingDatabase.MIGRATION_6_7,
+        )
     }
 
     @Composable
@@ -111,6 +92,7 @@ class IntervalWorkoutScreen(
         var rounds by remember { mutableStateOf(DEFAULT_ROUNDS) }
         var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
         var isLoadingExercises by remember { mutableStateOf(true) }
+        val customSchemes by repository.intervalSchemes.collectAsState(initial = emptyList())
 
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) { repository.ensureSeeded() }
@@ -133,11 +115,12 @@ class IntervalWorkoutScreen(
 
                 IntervalMode.SELECT_PRESET -> IntervalPresetContent(
                     exerciseName = selectedExercise?.name ?: "Intervals",
+                    customSchemes = customSchemes,
                     onBack = { mode = IntervalMode.SELECT_EXERCISE },
-                    onSelect = { preset ->
-                        workSeconds = preset.workSeconds
-                        restSeconds = preset.restSeconds
-                        rounds = preset.rounds
+                    onSelect = { work, rest, rnds ->
+                        workSeconds = work
+                        restSeconds = rest
+                        rounds = rnds
                         mode = IntervalMode.CONFIGURE
                     },
                 )
@@ -178,8 +161,9 @@ private suspend fun loadCardioExercises(repository: TrainingRepository): List<Ex
 @Composable
 private fun IntervalPresetContent(
     exerciseName: String,
+    customSchemes: List<IntervalScheme>,
     onBack: () -> Unit,
-    onSelect: (IntervalPreset) -> Unit,
+    onSelect: (workSeconds: Int, restSeconds: Int, rounds: Int) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -200,16 +184,33 @@ private fun IntervalPresetContent(
                 .fillMaxSize()
                 .padding(UiConstants.SpacedScrollPadding),
         ) {
-            IntervalPreset.entries.forEach { preset ->
-                IntervalPresetRow(preset = preset, onClick = { onSelect(preset) })
+            // Saved schemes (including the seeded defaults) first, fully manual "Custom" last.
+            customSchemes.forEach { scheme ->
+                IntervalPresetRow(
+                    icon = LightIcons.LARGE_LIST,
+                    title = scheme.name,
+                    subtitle = formatSchemeSubtitle(scheme),
+                    onClick = { onSelect(scheme.workSeconds, scheme.restSeconds, scheme.rounds) },
+                )
             }
+            IntervalPresetRow(
+                icon = LightIcons.ALARM,
+                title = CUSTOM_PRESET_TITLE,
+                subtitle = CUSTOM_PRESET_SUBTITLE,
+                onClick = { onSelect(DEFAULT_WORK_SEC, DEFAULT_REST_SEC, DEFAULT_ROUNDS) },
+            )
         }
     }
 }
 
+private fun formatSchemeSubtitle(scheme: IntervalScheme): String =
+    "${formatCountdown(scheme.workSeconds)} work, ${formatCountdown(scheme.restSeconds)} rest, ${scheme.rounds} rounds"
+
 @Composable
 private fun IntervalPresetRow(
-    preset: IntervalPreset,
+    icon: LightIconConfiguration,
+    title: String,
+    subtitle: String,
     onClick: () -> Unit,
 ) {
     Row(
@@ -220,15 +221,15 @@ private fun IntervalPresetRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LightIcon(
-            icon = preset.icon,
+            icon = icon,
             size = 3f,
             contentDescription = null,
             modifier = Modifier.padding(end = 16.dp),
         )
         Column {
-            LightText(text = preset.title, variant = LightTextVariant.Copy)
+            LightText(text = title, variant = LightTextVariant.Copy)
             LightText(
-                text = preset.subtitle,
+                text = subtitle,
                 variant = LightTextVariant.Detail,
                 lighten = true,
                 modifier = Modifier.padding(top = 4.dp),
