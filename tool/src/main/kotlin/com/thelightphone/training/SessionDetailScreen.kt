@@ -412,11 +412,6 @@ class SessionDetailScreen(
                     SessionDetailMode.ConfirmDeleteWorkout -> {
                         ConfirmDeleteWorkoutContent(
                             onCancel = viewModel::cancelDeleteWorkout,
-                            onConfirm = {
-                                viewModel.viewModelScope.launch {
-                                    viewModel.confirmDeleteWorkout()
-                                }
-                            },
                             onConfirmAndNavigate = {
                                 viewModel.viewModelScope.launch {
                                     viewModel.confirmDeleteWorkout()
@@ -838,7 +833,6 @@ private fun ConfirmDeleteExerciseContent(
 @Composable
 private fun ConfirmDeleteWorkoutContent(
     onCancel: () -> Unit,
-    onConfirm: () -> Unit,
     onConfirmAndNavigate: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {

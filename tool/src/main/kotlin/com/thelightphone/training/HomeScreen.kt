@@ -314,7 +314,6 @@ private fun CardioSessionRow(activity: LoggedActivity.Cardio, distanceUnit: Dist
             val details = buildList {
                 add(formatDuration(session.durationSeconds))
                 session.distanceKm?.let { add("${formatDistance(distanceUnit.fromKm(it))} ${distanceUnit.displayName}") }
-                session.pace?.let { add(it) }
             }.joinToString(" · ")
             LightText(
                 text = "${activity.exerciseName} — $details",

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,14 +18,12 @@ import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.buildDatabase
-import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightEditableRow
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText
-import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
@@ -50,8 +47,9 @@ private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 
 private enum class CardioMode { SELECT_EXERCISE, LOG }
 
-/** Which field is being edited via [LightTextInputEditor] on the log screen; null means none. */
-private enum class LogField { DURATION, DISTANCE, PACE }
+/** Which field is being edited via a nudge-wheel picker on the log screen; null means none.
+ * Pace is not editable -- it's computed from duration and distance, see [formatPace]. */
+private enum class LogField { DURATION, DISTANCE }
 
 /**
  * Steady-state cardio logging: pick which cardio exercise, then log its duration (and any
@@ -88,7 +86,6 @@ class CardioWorkoutScreen(
         var isLoadingExercises by remember { mutableStateOf(true) }
         var durationSeconds by remember { mutableStateOf<Int?>(null) }
         var distanceTenths by remember { mutableStateOf<Int?>(null) }
-        var paceValue by remember { mutableStateOf("") }
         var editingField by remember { mutableStateOf<LogField?>(null) }
         var isSaving by remember { mutableStateOf(false) }
         // Lives at this level, not inside the duration editor, so it keeps running (or stays
@@ -124,7 +121,7 @@ class CardioWorkoutScreen(
                         exerciseId = exercise.id,
                         durationSeconds = duration,
                         distanceKm = distanceTenths?.let { distanceUnit.toKm(it / 10.0) },
-                        pace = paceValue.trim().ifBlank { null },
+                        pace = distanceTenths?.let { formatPace(duration, it / 10.0, distanceUnit.displayName) },
                     )
                 }
                 goBack(Unit)
@@ -154,13 +151,10 @@ class CardioWorkoutScreen(
                                 durationSeconds = durationSeconds,
                                 distanceTenths = distanceTenths,
                                 distanceUnit = distanceUnit,
-                                paceValue = paceValue,
                                 isTimerRunning = isTimerRunning,
                                 canSave = durationSeconds != null && !isSaving,
                                 onEditDuration = { editingField = LogField.DURATION },
-                                onEditField = { field ->
-                                    editingField = if (field == TrackedField.DISTANCE) LogField.DISTANCE else LogField.PACE
-                                },
+                                onEditDistance = { editingField = LogField.DISTANCE },
                                 onBack = { goBack(Unit) },
                                 onSave = {
                                     if (isTimerRunning) {
@@ -183,27 +177,13 @@ class CardioWorkoutScreen(
                                     onReset = { durationSeconds = 0 },
                                 ),
                             )
-                        } else if (fieldBeingEdited == LogField.DISTANCE) {
+                        } else {
                             DistanceNudgeEntryContent(
                                 title = "Distance (${distanceUnit.displayName})",
                                 tenths = distanceTenths ?: 0,
                                 onTenthsChange = { distanceTenths = it },
                                 onDone = { editingField = null },
                                 onBack = { editingField = null },
-                            )
-                        } else {
-                            val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(paceValue) }
-                            LightTextInputEditor(
-                                title = TrackedField.PACE.displayName,
-                                state = fieldTextFieldState,
-                                keyboardOptionsFlow = rememberKeyboardOptions(),
-                                onSubmit = { rawValue ->
-                                    paceValue = rawValue.toString()
-                                    editingField = null
-                                },
-                                onBack = { editingField = null },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }
@@ -238,11 +218,10 @@ private fun LogResultsContent(
     durationSeconds: Int?,
     distanceTenths: Int?,
     distanceUnit: DistanceUnit,
-    paceValue: String,
     isTimerRunning: Boolean,
     canSave: Boolean,
     onEditDuration: () -> Unit,
-    onEditField: (TrackedField) -> Unit,
+    onEditDistance: () -> Unit,
     onBack: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -281,15 +260,16 @@ private fun LogResultsContent(
                 LightEditableRow(
                     superscript = "Distance",
                     label = distanceTenths?.let { "%.1f %s".format(it / 10.0, distanceUnit.displayName) } ?: "Not set",
-                    onClick = { onEditField(TrackedField.DISTANCE) },
+                    onClick = onEditDistance,
                 )
             }
             if (TrackedField.PACE in trackedFields) {
-                LightEditableRow(
-                    superscript = "Pace",
-                    label = paceValue.ifBlank { "Not set" },
-                    onClick = { onEditField(TrackedField.PACE) },
-                )
+                val pace = if (durationSeconds != null && distanceTenths != null) {
+                    formatPace(durationSeconds, distanceTenths / 10.0, distanceUnit.displayName)
+                } else {
+                    null
+                }
+                DetailRow(label = "Pace", value = pace ?: "Add duration and distance to see pace")
             }
         }
 
