@@ -56,15 +56,15 @@ abstract class TrainingDatabase : RoomDatabase() {
         val MIGRATION_3_4: Migration = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
-                    "INSERT INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
+                    "INSERT OR IGNORE INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
                         "('tabata', 'Tabata', 20, 10, 8)",
                 )
                 db.execSQL(
-                    "INSERT INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
+                    "INSERT OR IGNORE INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
                         "('nordic-4x4', 'Nordic 4x4', 240, 180, 4)",
                 )
                 db.execSQL(
-                    "INSERT INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
+                    "INSERT OR IGNORE INTO `interval_presets` (`id`, `name`, `work_seconds`, `rest_seconds`, `rounds`) VALUES " +
                         "('hiit-30-30', 'HIIT 30/30', 30, 30, 10)",
                 )
             }

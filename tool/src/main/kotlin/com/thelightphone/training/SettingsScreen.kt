@@ -1361,15 +1361,6 @@ private fun IntervalSchemeRow(
     }
 }
 
-private fun formatSchemeSubtitle(scheme: IntervalScheme): String {
-    fun mmss(totalSeconds: Int): String {
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        return "%d:%02d".format(minutes, seconds)
-    }
-    return "${mmss(scheme.workSeconds)} work, ${mmss(scheme.restSeconds)} rest, ${scheme.rounds} rounds"
-}
-
 @Composable
 private fun IntervalSchemeConfigureContent(
     state: SettingsUiState,

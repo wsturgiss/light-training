@@ -203,8 +203,8 @@ private fun IntervalPresetContent(
     }
 }
 
-private fun formatSchemeSubtitle(scheme: IntervalScheme): String =
-    "${formatCountdown(scheme.workSeconds)} work, ${formatCountdown(scheme.restSeconds)} rest, ${scheme.rounds} rounds"
+fun formatSchemeSubtitle(scheme: IntervalScheme): String =
+    "${formatDuration(scheme.workSeconds)} work, ${formatDuration(scheme.restSeconds)} rest, ${scheme.rounds} rounds"
 
 @Composable
 private fun IntervalPresetRow(
@@ -423,7 +423,7 @@ private fun IntervalActiveContent(
                     lighten = phase == IntervalPhase.REST,
                 )
                 LightText(
-                    text = formatCountdown(remaining),
+                    text = formatDuration(remaining),
                     variant = LightTextVariant.Title,
                     monospace = true,
                     modifier = Modifier.padding(top = 8.dp),
@@ -467,10 +467,4 @@ private fun IntervalActiveContent(
             },
         )
     }
-}
-
-private fun formatCountdown(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }

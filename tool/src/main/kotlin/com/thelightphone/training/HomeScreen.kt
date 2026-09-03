@@ -293,10 +293,8 @@ private fun CardioSessionRow(activity: LoggedActivity.Cardio, onClick: () -> Uni
             .padding(vertical = 12.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
-            val minutes = session.durationSeconds / 60
-            val seconds = session.durationSeconds % 60
             val details = buildList {
-                add("%d:%02d".format(minutes, seconds))
+                add(formatDuration(session.durationSeconds))
                 session.distance?.let { add(it) }
                 session.pace?.let { add(it) }
             }.joinToString(" · ")

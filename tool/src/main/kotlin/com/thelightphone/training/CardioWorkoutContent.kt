@@ -214,12 +214,6 @@ private suspend fun loadCardioExercises(repository: TrainingRepository): List<Ex
     return repository.exercises.first().filter { it.primaryMuscleGroupId in cardioGroupIds }
 }
 
-private fun formatElapsed(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
-}
-
 /**
  * Where a cardio result gets logged: duration plus any tracked fields (distance/pace). Duration
  * can be typed in directly, or timed live -- both happen on the same wheel picker (see
@@ -266,7 +260,7 @@ private fun LogResultsContent(
             )
             LightEditableRow(
                 superscript = "Duration",
-                label = (durationSeconds?.let { formatElapsed(it) } ?: "Not set") +
+                label = (durationSeconds?.let { formatDuration(it) } ?: "Not set") +
                     if (isTimerRunning) " · Running" else "",
                 onClick = onEditDuration,
             )

@@ -11,6 +11,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
@@ -83,7 +84,8 @@ class WorkoutStyleScreen(
                     WorkoutStyleRow(
                         icon = LightIcons.ALARM,
                         title = "Interval Training",
-                        subtitle = "Alternate work and rest for a set number of rounds",
+                        subtitle = "Coming soon",
+                        enabled = false,
                         onClick = { goBack(WorkoutStyleChoice.INTERVAL) },
                     )
                 }
@@ -98,11 +100,12 @@ private fun WorkoutStyleRow(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .lightClickable(onClick = onClick)
+            .let { if (enabled) it.lightClickable(onClick = onClick) else it }
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -110,10 +113,12 @@ private fun WorkoutStyleRow(
             icon = icon,
             size = 3f,
             contentDescription = null,
-            modifier = Modifier.padding(end = 16.dp),
+            modifier = Modifier
+                .padding(end = 16.dp)
+                .let { if (enabled) it else it.alpha(0.4f) },
         )
         Column {
-            LightText(text = title, variant = LightTextVariant.Copy)
+            LightText(text = title, variant = LightTextVariant.Copy, lighten = !enabled)
             LightText(
                 text = subtitle,
                 variant = LightTextVariant.Detail,

@@ -319,7 +319,7 @@ private fun CardioSessionOverviewContent(
                         lighten = true,
                         modifier = Modifier.padding(bottom = 16.dp),
                     )
-                    DetailRow(label = "Duration", value = formatCardioDuration(session.durationSeconds))
+                    DetailRow(label = "Duration", value = formatDuration(session.durationSeconds))
                     session.distance?.let { DetailRow(label = "Distance", value = it) }
                     session.pace?.let { DetailRow(label = "Pace", value = it) }
                 }
@@ -415,7 +415,7 @@ private fun EditCardioSessionContent(
         ) {
             LightEditableRow(
                 superscript = "Duration",
-                label = state.draftDurationSeconds?.let { formatCardioDuration(it) } ?: "Not set",
+                label = state.draftDurationSeconds?.let { formatDuration(it) } ?: "Not set",
                 onClick = onEditDuration,
             )
             if (TrackedField.DISTANCE in state.trackedFields) {
@@ -507,10 +507,4 @@ private fun ConfirmDeleteCardioSessionContent(
             ),
         )
     }
-}
-
-private fun formatCardioDuration(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
