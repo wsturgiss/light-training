@@ -127,12 +127,12 @@ class CardioSessionDetailViewModel(
         _uiState.update { it.copy(editingField = null) }
     }
 
-    fun submitDraftDuration(seconds: Int) {
-        _uiState.update { it.copy(draftDurationSeconds = seconds, editingField = null) }
+    fun updateDraftDuration(seconds: Int) {
+        _uiState.update { it.copy(draftDurationSeconds = seconds) }
     }
 
     /** Handles the DISTANCE/PACE text editors; DURATION is set directly via
-     * [submitDraftDuration] from the minutes/seconds nudge editor instead. */
+     * [updateDraftDuration] from the minutes/seconds nudge editor instead. */
     fun submitEditField(rawValue: CharSequence) {
         val field = _uiState.value.editingField ?: return
         val value = rawValue.toString()
@@ -240,8 +240,9 @@ class CardioSessionDetailScreen(
                     } else if (fieldBeingEdited == CardioEditField.DURATION) {
                         DurationNudgeEntryContent(
                             title = "Duration",
-                            initialSeconds = state.draftDurationSeconds ?: 0,
-                            onConfirm = viewModel::submitDraftDuration,
+                            seconds = state.draftDurationSeconds ?: 0,
+                            onSecondsChange = viewModel::updateDraftDuration,
+                            onDone = viewModel::cancelEditField,
                             onBack = viewModel::cancelEditField,
                         )
                     } else {

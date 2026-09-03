@@ -57,6 +57,7 @@ fun WheelNumberPicker(
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     wraps: Boolean = false,
+    enabled: Boolean = true,
     formatValue: (Int) -> String = { it.toString() },
 ) = BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
     val itemHeight = maxHeight / VISIBLE_ROWS
@@ -112,6 +113,7 @@ fun WheelNumberPicker(
     LazyColumn(
         state = listState,
         flingBehavior = flingBehavior,
+        userScrollEnabled = enabled,
         contentPadding = PaddingValues(vertical = itemHeight),
         modifier = Modifier.fillMaxSize(),
     ) {

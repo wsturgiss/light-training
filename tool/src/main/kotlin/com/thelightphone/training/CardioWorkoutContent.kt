@@ -1,7 +1,7 @@
 package com.thelightphone.training
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -14,7 +14,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
@@ -24,6 +23,7 @@ import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightEditableRow
+import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextInputEditor
@@ -45,7 +45,7 @@ import kotlinx.coroutines.withContext
 
 private const val CARDIO_MUSCLE_GROUP_NAME = "Cardio"
 
-private enum class CardioMode { SELECT_EXERCISE, LOG, TIMER }
+private enum class CardioMode { SELECT_EXERCISE, LOG }
 
 /** Which field is being edited via [LightTextInputEditor] on the log screen; null means none. */
 private enum class LogField { DURATION, DISTANCE, PACE }
@@ -53,8 +53,9 @@ private enum class LogField { DURATION, DISTANCE, PACE }
 /**
  * Steady-state cardio logging: pick which cardio exercise, then log its duration (and any
  * tracked fields, e.g. distance/pace) either by hand or with an optional live stopwatch. The
- * timer is a side effect of logging, not a requirement -- see [CardioActiveContent] for how it
- * hands its elapsed time back to the duration field.
+ * timer lives directly on the duration wheel picker (see [DurationNudgeEntryContent]'s
+ * `timerControls`) -- there's no separate timer screen, and no separate "timer value" to reconcile
+ * with the duration: running the timer *is* setting the duration.
  */
 class CardioWorkoutScreen(
     sealedActivity: SealedLightActivity,
@@ -85,11 +86,10 @@ class CardioWorkoutScreen(
         var paceValue by remember { mutableStateOf("") }
         var editingField by remember { mutableStateOf<LogField?>(null) }
         var isSaving by remember { mutableStateOf(false) }
-        // Lives at this level (not inside the timer screen's composable) so it survives
-        // navigating back to the log screen and returning -- otherwise elapsed time is lost
-        // the moment the user leaves the timer.
-        var timerElapsedSeconds by remember { mutableStateOf(0) }
+        // Lives at this level, not inside the duration editor, so it keeps running (or stays
+        // paused at its last value) across navigating away from and back to that screen.
         var isTimerRunning by remember { mutableStateOf(false) }
+        var errorMessage by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) { repository.ensureSeeded() }
@@ -100,7 +100,7 @@ class CardioWorkoutScreen(
         LaunchedEffect(isTimerRunning) {
             while (isTimerRunning) {
                 delay(1000)
-                timerElapsedSeconds++
+                durationSeconds = (durationSeconds ?: 0) + 1
             }
         }
 
@@ -123,92 +123,82 @@ class CardioWorkoutScreen(
         }
 
         LightTheme(colors = themeColors) {
-            when (mode) {
-                CardioMode.SELECT_EXERCISE -> ExercisePickerContent(
-                    title = "Steady-State Cardio",
-                    exercises = cardioExercises,
-                    isLoading = isLoadingExercises,
-                    onBack = { goBack(Unit) },
-                    onSelect = { exercise ->
-                        selectedExercise = exercise
-                        mode = CardioMode.LOG
-                    },
-                )
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (mode) {
+                    CardioMode.SELECT_EXERCISE -> ExercisePickerContent(
+                        title = "Steady-State Cardio",
+                        exercises = cardioExercises,
+                        isLoading = isLoadingExercises,
+                        onBack = { goBack(Unit) },
+                        onSelect = { exercise ->
+                            selectedExercise = exercise
+                            mode = CardioMode.LOG
+                        },
+                    )
 
-                CardioMode.TIMER -> CardioActiveContent(
-                    exerciseName = selectedExercise?.name ?: "Cardio",
-                    elapsedSeconds = timerElapsedSeconds,
-                    isRunning = isTimerRunning,
-                    onToggleRunning = { isTimerRunning = !isTimerRunning },
-                    onReset = { timerElapsedSeconds = 0 },
-                    onBack = {
-                        // Only carry the timer's result over when the user hasn't already
-                        // logged a duration by hand -- the timer is an optional convenience,
-                        // not the source of truth, so it never clobbers a manual entry. The
-                        // timer keeps running in the background either way, and its value
-                        // stays visible (and applicable) from the log screen.
-                        if (durationSeconds == null) {
-                            durationSeconds = timerElapsedSeconds
+                    CardioMode.LOG -> {
+                        val fieldBeingEdited = editingField
+                        if (fieldBeingEdited == null) {
+                            LogResultsContent(
+                                exerciseName = selectedExercise?.name ?: "Cardio",
+                                trackedFields = selectedExercise?.trackedFields.orEmpty(),
+                                durationSeconds = durationSeconds,
+                                distanceValue = distanceValue,
+                                paceValue = paceValue,
+                                isTimerRunning = isTimerRunning,
+                                canSave = durationSeconds != null && !isSaving,
+                                onEditDuration = { editingField = LogField.DURATION },
+                                onEditField = { field ->
+                                    editingField = if (field == TrackedField.DISTANCE) LogField.DISTANCE else LogField.PACE
+                                },
+                                onBack = { goBack(Unit) },
+                                onSave = {
+                                    if (isTimerRunning) {
+                                        errorMessage = "Pause the timer before saving."
+                                    } else {
+                                        saveAndFinish()
+                                    }
+                                },
+                            )
+                        } else if (fieldBeingEdited == LogField.DURATION) {
+                            DurationNudgeEntryContent(
+                                title = "Duration",
+                                seconds = durationSeconds ?: 0,
+                                onSecondsChange = { durationSeconds = it },
+                                onDone = { editingField = null },
+                                onBack = { editingField = null },
+                                timerControls = TimerControls(
+                                    isRunning = isTimerRunning,
+                                    onToggleRunning = { isTimerRunning = !isTimerRunning },
+                                    onReset = { durationSeconds = 0 },
+                                ),
+                            )
+                        } else {
+                            val initialText = if (fieldBeingEdited == LogField.DISTANCE) distanceValue else paceValue
+                            val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(initialText) }
+                            LightTextInputEditor(
+                                title = if (fieldBeingEdited == LogField.DISTANCE) {
+                                    TrackedField.DISTANCE.displayName
+                                } else {
+                                    TrackedField.PACE.displayName
+                                },
+                                state = fieldTextFieldState,
+                                keyboardOptionsFlow = rememberKeyboardOptions(),
+                                onSubmit = { rawValue ->
+                                    val value = rawValue.toString()
+                                    if (fieldBeingEdited == LogField.DISTANCE) distanceValue = value else paceValue = value
+                                    editingField = null
+                                },
+                                onBack = { editingField = null },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
-                        mode = CardioMode.LOG
-                    },
-                )
-
-                CardioMode.LOG -> {
-                    val fieldBeingEdited = editingField
-                    if (fieldBeingEdited == null) {
-                        LogResultsContent(
-                            exerciseName = selectedExercise?.name ?: "Cardio",
-                            trackedFields = selectedExercise?.trackedFields.orEmpty(),
-                            durationSeconds = durationSeconds,
-                            distanceValue = distanceValue,
-                            paceValue = paceValue,
-                            timerElapsedSeconds = timerElapsedSeconds,
-                            isTimerRunning = isTimerRunning,
-                            canSave = durationSeconds != null && !isSaving,
-                            onEditDuration = { editingField = LogField.DURATION },
-                            onEditField = { field ->
-                                editingField = if (field == TrackedField.DISTANCE) LogField.DISTANCE else LogField.PACE
-                            },
-                            onOpenTimer = {
-                                if (timerElapsedSeconds == 0 && !isTimerRunning) isTimerRunning = true
-                                mode = CardioMode.TIMER
-                            },
-                            onUseTimerValue = { durationSeconds = timerElapsedSeconds },
-                            onBack = { goBack(Unit) },
-                            onSave = { saveAndFinish() },
-                        )
-                    } else if (fieldBeingEdited == LogField.DURATION) {
-                        DurationNudgeEntryContent(
-                            title = "Duration",
-                            initialSeconds = durationSeconds ?: 0,
-                            onConfirm = { seconds ->
-                                durationSeconds = seconds
-                                editingField = null
-                            },
-                            onBack = { editingField = null },
-                        )
-                    } else {
-                        val initialText = if (fieldBeingEdited == LogField.DISTANCE) distanceValue else paceValue
-                        val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(initialText) }
-                        LightTextInputEditor(
-                            title = if (fieldBeingEdited == LogField.DISTANCE) {
-                                TrackedField.DISTANCE.displayName
-                            } else {
-                                TrackedField.PACE.displayName
-                            },
-                            state = fieldTextFieldState,
-                            keyboardOptionsFlow = rememberKeyboardOptions(),
-                            onSubmit = { rawValue ->
-                                val value = rawValue.toString()
-                                if (fieldBeingEdited == LogField.DISTANCE) distanceValue = value else paceValue = value
-                                editingField = null
-                            },
-                            onBack = { editingField = null },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxSize(),
-                        )
                     }
+                }
+
+                errorMessage?.let { message ->
+                    LightFullscreenModal(message = message, onClose = { errorMessage = null })
                 }
             }
         }
@@ -224,71 +214,6 @@ private suspend fun loadCardioExercises(repository: TrainingRepository): List<Ex
     return repository.exercises.first().filter { it.primaryMuscleGroupId in cardioGroupIds }
 }
 
-/**
- * An optional live stopwatch: counts up from zero with play/pause. Its state is owned by
- * [CardioWorkoutScreen], not this composable, so it keeps running (or stays paused at its last
- * value) across visits to this screen -- leaving via [onDone] never discards it. There's no
- * target duration -- the caller decides whether to use the result, and manual entry always
- * takes precedence (see [CardioWorkoutScreen]).
- */
-@Composable
-private fun CardioActiveContent(
-    exerciseName: String,
-    elapsedSeconds: Int,
-    isRunning: Boolean,
-    onToggleRunning: () -> Unit,
-    onReset: () -> Unit,
-    onBack: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LightThemeTokens.colors.background),
-    ) {
-        LightTopBar(
-            leftButton = LightBarButton.LightIcon(
-                icon = LightIcons.BACK,
-                onClick = onBack,
-                contentDescription = "Back to log",
-            ),
-            center = LightTopBarCenter.Text(exerciseName),
-        )
-
-        Column(
-            modifier = Modifier.weight(1f).fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            LightText(
-                text = formatElapsed(elapsedSeconds),
-                variant = LightTextVariant.Title,
-                monospace = true,
-            )
-        }
-
-        LightBottomBar(
-            items = listOf(
-                LightBarButton.LightIcon(
-                    icon = if (isRunning) LightIcons.PAUSE else LightIcons.PLAY,
-                    onClick = onToggleRunning,
-                    contentDescription = if (isRunning) "Pause" else "Resume",
-                ),
-                // Only offered once paused -- resetting a running timer out from under
-                // yourself is more likely a misclick than intentional.
-                if (!isRunning) {
-                    LightBarButton.LightIcon(
-                        icon = LightIcons.REFRESH,
-                        onClick = onReset,
-                        contentDescription = "Reset timer",
-                    )
-                } else {
-                    null
-                },
-            ),
-        )
-    }
-}
-
 private fun formatElapsed(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
@@ -297,9 +222,8 @@ private fun formatElapsed(totalSeconds: Int): String {
 
 /**
  * Where a cardio result gets logged: duration plus any tracked fields (distance/pace). Duration
- * can be typed in directly, or filled in by running the optional timer -- either way it's just
- * another editable row here, so the user never has to run the timer to log a workout, and can
- * still edit the duration by hand afterward even if the timer set it.
+ * can be typed in directly, or timed live -- both happen on the same wheel picker (see
+ * [DurationNudgeEntryContent]'s `timerControls`), so it's just another editable row here.
  */
 @Composable
 private fun LogResultsContent(
@@ -308,13 +232,10 @@ private fun LogResultsContent(
     durationSeconds: Int?,
     distanceValue: String,
     paceValue: String,
-    timerElapsedSeconds: Int,
     isTimerRunning: Boolean,
     canSave: Boolean,
     onEditDuration: () -> Unit,
     onEditField: (TrackedField) -> Unit,
-    onOpenTimer: () -> Unit,
-    onUseTimerValue: () -> Unit,
     onBack: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -345,18 +266,10 @@ private fun LogResultsContent(
             )
             LightEditableRow(
                 superscript = "Duration",
-                label = durationSeconds?.let { formatElapsed(it) } ?: "Not set",
+                label = (durationSeconds?.let { formatElapsed(it) } ?: "Not set") +
+                    if (isTimerRunning) " · Running" else "",
                 onClick = onEditDuration,
             )
-            if (timerElapsedSeconds > 0 || isTimerRunning) {
-                LightEditableRow(
-                    superscript = "Timer",
-                    label = formatElapsed(timerElapsedSeconds) + if (isTimerRunning) " · Running" else " · Paused",
-                    subscript = if (durationSeconds != timerElapsedSeconds) "Tap to use this as the duration" else null,
-                    editable = false,
-                    onClick = onUseTimerValue,
-                )
-            }
             if (TrackedField.DISTANCE in trackedFields) {
                 LightEditableRow(
                     superscript = "Distance",
@@ -375,11 +288,6 @@ private fun LogResultsContent(
 
         LightBottomBar(
             items = listOf(
-                LightBarButton.LightIcon(
-                    icon = LightIcons.ALARM,
-                    onClick = onOpenTimer,
-                    contentDescription = if (timerElapsedSeconds > 0 || isTimerRunning) "Open timer" else "Time this workout",
-                ),
                 LightBarButton.LightIcon(
                     icon = LightIcons.ACCEPT,
                     onClick = if (canSave) onSave else null,

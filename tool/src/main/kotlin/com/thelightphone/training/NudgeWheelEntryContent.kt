@@ -37,6 +37,18 @@ class NudgeFieldConfig(
     /** True if spinning past either end of [wheelRange] should continue into the other end
      * (e.g. minutes/seconds on a clock) instead of stopping. */
     val wheelWraps: Boolean = false,
+    /** False to block manual spinning, e.g. while [TimerControls] is running the wheel itself. */
+    val wheelEnabled: Boolean = true,
+)
+
+/** Play/pause + reset controls shown on [NudgeWheelEntryContent]'s bottom bar, for a wheel that
+ * doubles as a live-ticking timer (see [DurationNudgeEntryContent]). Play/pause sits bottom-left,
+ * reset bottom-right -- reset is omitted while running, since resetting a running timer out from
+ * under yourself is more likely a misclick than intentional. */
+class TimerControls(
+    val isRunning: Boolean,
+    val onToggleRunning: () -> Unit,
+    val onReset: () -> Unit,
 )
 
 /**
@@ -54,6 +66,9 @@ fun NudgeWheelEntryContent(
     // Shows a ":" between fields, e.g. for hours/minutes/seconds duration entry. Not appropriate
     // for unrelated fields side by side (e.g. weight+reps).
     showFieldSeparators: Boolean = false,
+    // Adds play/pause (bottom-left) and reset (bottom-right, paused only) alongside the confirm
+    // button, for a wheel that doubles as a live timer.
+    timerControls: TimerControls? = null,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -92,13 +107,37 @@ fun NudgeWheelEntryContent(
         }
 
         LightBottomBar(
-            items = listOf(
-                LightBarButton.LightIcon(
-                    icon = LightIcons.ACCEPT,
-                    onClick = onConfirm,
-                    contentDescription = "Confirm",
-                ),
-            ),
+            items = if (timerControls == null) {
+                listOf(
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.ACCEPT,
+                        onClick = onConfirm,
+                        contentDescription = "Confirm",
+                    ),
+                )
+            } else {
+                listOf(
+                    LightBarButton.LightIcon(
+                        icon = if (timerControls.isRunning) LightIcons.PAUSE else LightIcons.PLAY,
+                        onClick = timerControls.onToggleRunning,
+                        contentDescription = if (timerControls.isRunning) "Pause" else "Resume",
+                    ),
+                    LightBarButton.LightIcon(
+                        icon = LightIcons.ACCEPT,
+                        onClick = onConfirm,
+                        contentDescription = "Confirm",
+                    ),
+                    if (!timerControls.isRunning) {
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.REFRESH,
+                            onClick = timerControls.onReset,
+                            contentDescription = "Reset timer",
+                        )
+                    } else {
+                        null
+                    },
+                )
+            },
         )
     }
 }
@@ -115,6 +154,7 @@ private fun RowScope.NudgeFieldColumn(config: NudgeFieldConfig) {
             onValueChange = config.onWheelValueChange,
             formatValue = config.wheelFormat,
             wraps = config.wheelWraps,
+            enabled = config.wheelEnabled,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
         LightText(
@@ -126,18 +166,35 @@ private fun RowScope.NudgeFieldColumn(config: NudgeFieldConfig) {
     }
 }
 
-/** Hours+minutes+seconds duration entry, built on [NudgeWheelEntryContent]. Used by the cardio
- * logging and edit flows. */
+/**
+ * Hours+minutes+seconds duration entry, built on [NudgeWheelEntryContent]. Used by the cardio
+ * logging and edit flows.
+ *
+ * A controlled component -- [seconds] flows in and [onSecondsChange] flows every change back out
+ * immediately, rather than buffering edits until confirm -- so that when [timerControls] is
+ * supplied, a running timer can drive the wheel (via the caller ticking [seconds] up once a
+ * second) exactly the same way a manual spin does. [onDone] is the confirm/accept action; unlike
+ * [onSecondsChange] it fires once, when the user is finished with this screen.
+ */
 @Composable
 fun DurationNudgeEntryContent(
     title: String,
-    initialSeconds: Int,
-    onConfirm: (seconds: Int) -> Unit,
+    seconds: Int,
+    onSecondsChange: (Int) -> Unit,
+    onDone: () -> Unit,
     onBack: () -> Unit,
+    timerControls: TimerControls? = null,
 ) {
-    val hoursFieldState = rememberTextFieldState((initialSeconds / 3600).toString())
-    val minutesFieldState = rememberTextFieldState(((initialSeconds % 3600) / 60).toString())
-    val secondsFieldState = rememberTextFieldState((initialSeconds % 60).toString())
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    val secs = seconds % 60
+    // Field states exist only to satisfy NudgeFieldConfig's shape (shared with AddSetContent,
+    // which does read them back at confirm time) -- this component ignores them and reads/writes
+    // `seconds` directly instead, so the wheel can be driven externally (the running timer).
+    val hoursFieldState = rememberTextFieldState(hours.toString())
+    val minutesFieldState = rememberTextFieldState(minutes.toString())
+    val secondsFieldState = rememberTextFieldState(secs.toString())
+    val wheelEnabled = timerControls?.isRunning != true
 
     NudgeWheelEntryContent(
         title = title,
@@ -146,37 +203,36 @@ fun DurationNudgeEntryContent(
                 label = "Hours",
                 fieldState = hoursFieldState,
                 wheelRange = 0..23,
-                wheelValue = hoursFieldState.text.toString().toIntOrNull() ?: 0,
-                onWheelValueChange = { setIntField(hoursFieldState, it) },
+                wheelValue = hours,
+                onWheelValueChange = { onSecondsChange(it * 3600 + minutes * 60 + secs) },
                 wheelFormat = { "%02d".format(it) },
+                wheelEnabled = wheelEnabled,
             ),
             NudgeFieldConfig(
                 label = "Minutes",
                 fieldState = minutesFieldState,
                 wheelRange = 0..59,
-                wheelValue = minutesFieldState.text.toString().toIntOrNull() ?: 0,
-                onWheelValueChange = { setIntField(minutesFieldState, it) },
+                wheelValue = minutes,
+                onWheelValueChange = { onSecondsChange(hours * 3600 + it * 60 + secs) },
                 wheelWraps = true,
                 wheelFormat = { "%02d".format(it) },
+                wheelEnabled = wheelEnabled,
             ),
             NudgeFieldConfig(
                 label = "Seconds",
                 fieldState = secondsFieldState,
                 wheelRange = 0..59,
-                wheelValue = secondsFieldState.text.toString().toIntOrNull() ?: 0,
-                onWheelValueChange = { setIntField(secondsFieldState, it) },
+                wheelValue = secs,
+                onWheelValueChange = { onSecondsChange(hours * 3600 + minutes * 60 + it) },
                 wheelWraps = true,
                 wheelFormat = { "%02d".format(it) },
+                wheelEnabled = wheelEnabled,
             ),
         ),
         showFieldSeparators = true,
-        onConfirm = {
-            val hours = hoursFieldState.text.toString().toIntOrNull() ?: 0
-            val minutes = minutesFieldState.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
-            val seconds = secondsFieldState.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
-            onConfirm(hours * 3600 + minutes * 60 + seconds)
-        },
+        onConfirm = onDone,
         onBack = onBack,
+        timerControls = timerControls,
     )
 }
 
