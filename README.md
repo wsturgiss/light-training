@@ -10,15 +10,11 @@ a tool for tracking lifting and cardio workouts built with the light-sdk for the
 ## Roadmap
 
 - Cardio workout tracking
-  - exercise type
-  - pace
-  - duration
-  - distance
-  - support for interval training
-    - rest/work scheme
-    - rest periods
-    - number of rounds?
-  - tbd
+  - [x] exercise type
+  - [x] duration
+  - [x] distance
+  - [x] pace (calculated from duration + distance)
+  - Interval training (work/rest scheme, rounds) — built, hidden behind a "coming soon" flag until it's ready to ship
 - Weight training
   - RPE?
   - View previous reps/sets/weights of an exercise
