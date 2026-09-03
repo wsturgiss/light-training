@@ -11,3 +11,7 @@ fun formatDuration(totalSeconds: Int): String {
         "%d:%02d".format(minutes, seconds)
     }
 }
+
+/** Formats a distance value, dropping decimal places when the value is a whole number. */
+fun formatDistance(value: Double): String =
+    if (value == value.toLong().toDouble()) value.toLong().toString() else "%.2f".format(value)

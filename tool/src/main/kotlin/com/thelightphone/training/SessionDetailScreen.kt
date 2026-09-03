@@ -338,6 +338,8 @@ class SessionDetailScreen(
             TrainingDatabase.MIGRATION_4_5,
             TrainingDatabase.MIGRATION_5_6,
             TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
         )
     }
 

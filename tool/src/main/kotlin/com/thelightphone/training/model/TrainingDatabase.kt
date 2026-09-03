@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         IntervalPresetEntity::class,
         CardioSessionEntity::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = false,
 )
 abstract class TrainingDatabase : RoomDatabase() {
@@ -26,6 +26,9 @@ abstract class TrainingDatabase : RoomDatabase() {
     internal abstract fun cardioSessionDao(): CardioSessionDao
 
     companion object {
+        /** Must match [DistanceUnit]'s conversion factor. */
+        private const val KM_PER_MILE = 1.609344
+
         /**
          * Adds the interval_presets table for user-defined interval schemes. Every other
          * table -- including all logged weight-training sessions -- is left untouched.
@@ -110,6 +113,75 @@ abstract class TrainingDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `workout_sessions` ADD COLUMN `created_at` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `cardio_sessions` ADD COLUMN `created_at` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * Makes distance a default tracked field for the "running" exercise, for users
+         * upgrading from before distance tracking was the default (migrations don't run on a
+         * fresh install -- see [TrainingRepository.defaultExercises]). Only touches the
+         * "running" row, and only if the user hasn't already customized its tracked fields.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE `exercises` SET `tracked_fields` = 'DISTANCE' WHERE `id` = 'running' AND `tracked_fields` = ''",
+                )
+            }
+        }
+
+        /**
+         * Replaces cardio_sessions' free-text `distance` column with a numeric `distance_km`
+         * one, so distance can be displayed/entered in the user's preferred unit (km or mi)
+         * instead of whatever the user happened to type. Existing values are best-effort
+         * parsed: a leading number is read out of the old text, treated as miles if it
+         * mentions "mi", otherwise as km (the only unit the app supported before this
+         * migration). Values that don't parse are dropped -- there's no reliable way to
+         * recover their original meaning.
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE `cardio_sessions_new` (
+                        `id` TEXT NOT NULL,
+                        `exercise_id` TEXT NOT NULL,
+                        `date` TEXT NOT NULL,
+                        `duration_seconds` INTEGER NOT NULL,
+                        `distance_km` REAL,
+                        `pace` TEXT,
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `cardio_sessions_new`
+                        (`id`, `exercise_id`, `date`, `duration_seconds`, `distance_km`, `pace`, `created_at`)
+                    SELECT `id`, `exercise_id`, `date`, `duration_seconds`, NULL, `pace`, `created_at`
+                    FROM `cardio_sessions`
+                    """.trimIndent(),
+                )
+
+                val numberRegex = Regex("""[-+]?[0-9]*\.?[0-9]+""")
+                db.query("SELECT `id`, `distance` FROM `cardio_sessions` WHERE `distance` IS NOT NULL").use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow("id")
+                    val distanceIndex = cursor.getColumnIndexOrThrow("distance")
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(idIndex)
+                        val raw = cursor.getString(distanceIndex) ?: continue
+                        val value = numberRegex.find(raw)?.value?.toDoubleOrNull() ?: continue
+                        val km = if (raw.lowercase().contains("mi")) value * KM_PER_MILE else value
+                        db.execSQL(
+                            "UPDATE `cardio_sessions_new` SET `distance_km` = ? WHERE `id` = ?",
+                            arrayOf(km, id),
+                        )
+                    }
+                }
+
+                db.execSQL("DROP TABLE `cardio_sessions`")
+                db.execSQL("ALTER TABLE `cardio_sessions_new` RENAME TO `cardio_sessions`")
             }
         }
     }

@@ -33,10 +33,13 @@ import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.TrackedField
 import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
+import com.thelightphone.training.model.distanceUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -70,6 +73,8 @@ class CardioWorkoutScreen(
             TrainingDatabase.MIGRATION_4_5,
             TrainingDatabase.MIGRATION_5_6,
             TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
         )
     }
 
@@ -82,7 +87,7 @@ class CardioWorkoutScreen(
         var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
         var isLoadingExercises by remember { mutableStateOf(true) }
         var durationSeconds by remember { mutableStateOf<Int?>(null) }
-        var distanceValue by remember { mutableStateOf("") }
+        var distanceTenths by remember { mutableStateOf<Int?>(null) }
         var paceValue by remember { mutableStateOf("") }
         var editingField by remember { mutableStateOf<LogField?>(null) }
         var isSaving by remember { mutableStateOf(false) }
@@ -90,11 +95,15 @@ class CardioWorkoutScreen(
         // paused at its last value) across navigating away from and back to that screen.
         var isTimerRunning by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
+        var distanceUnit by remember { mutableStateOf(DistanceUnit.KM) }
 
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) { repository.ensureSeeded() }
             cardioExercises = loadCardioExercises(repository)
             isLoadingExercises = false
+            distanceUnit = distanceUnitFromStorage(
+                withContext(Dispatchers.IO) { lightContext.dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT] },
+            )
         }
 
         LaunchedEffect(isTimerRunning) {
@@ -114,7 +123,7 @@ class CardioWorkoutScreen(
                     repository.insertCardioSession(
                         exerciseId = exercise.id,
                         durationSeconds = duration,
-                        distance = distanceValue.trim().ifBlank { null },
+                        distanceKm = distanceTenths?.let { distanceUnit.toKm(it / 10.0) },
                         pace = paceValue.trim().ifBlank { null },
                     )
                 }
@@ -143,7 +152,8 @@ class CardioWorkoutScreen(
                                 exerciseName = selectedExercise?.name ?: "Cardio",
                                 trackedFields = selectedExercise?.trackedFields.orEmpty(),
                                 durationSeconds = durationSeconds,
-                                distanceValue = distanceValue,
+                                distanceTenths = distanceTenths,
+                                distanceUnit = distanceUnit,
                                 paceValue = paceValue,
                                 isTimerRunning = isTimerRunning,
                                 canSave = durationSeconds != null && !isSaving,
@@ -173,20 +183,22 @@ class CardioWorkoutScreen(
                                     onReset = { durationSeconds = 0 },
                                 ),
                             )
+                        } else if (fieldBeingEdited == LogField.DISTANCE) {
+                            DistanceNudgeEntryContent(
+                                title = "Distance (${distanceUnit.displayName})",
+                                tenths = distanceTenths ?: 0,
+                                onTenthsChange = { distanceTenths = it },
+                                onDone = { editingField = null },
+                                onBack = { editingField = null },
+                            )
                         } else {
-                            val initialText = if (fieldBeingEdited == LogField.DISTANCE) distanceValue else paceValue
-                            val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(initialText) }
+                            val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(paceValue) }
                             LightTextInputEditor(
-                                title = if (fieldBeingEdited == LogField.DISTANCE) {
-                                    TrackedField.DISTANCE.displayName
-                                } else {
-                                    TrackedField.PACE.displayName
-                                },
+                                title = TrackedField.PACE.displayName,
                                 state = fieldTextFieldState,
                                 keyboardOptionsFlow = rememberKeyboardOptions(),
                                 onSubmit = { rawValue ->
-                                    val value = rawValue.toString()
-                                    if (fieldBeingEdited == LogField.DISTANCE) distanceValue = value else paceValue = value
+                                    paceValue = rawValue.toString()
                                     editingField = null
                                 },
                                 onBack = { editingField = null },
@@ -224,7 +236,8 @@ private fun LogResultsContent(
     exerciseName: String,
     trackedFields: Set<TrackedField>,
     durationSeconds: Int?,
-    distanceValue: String,
+    distanceTenths: Int?,
+    distanceUnit: DistanceUnit,
     paceValue: String,
     isTimerRunning: Boolean,
     canSave: Boolean,
@@ -267,7 +280,7 @@ private fun LogResultsContent(
             if (TrackedField.DISTANCE in trackedFields) {
                 LightEditableRow(
                     superscript = "Distance",
-                    label = distanceValue.ifBlank { "Not set" },
+                    label = distanceTenths?.let { "%.1f %s".format(it / 10.0, distanceUnit.displayName) } ?: "Not set",
                     onClick = { onEditField(TrackedField.DISTANCE) },
                 )
             }

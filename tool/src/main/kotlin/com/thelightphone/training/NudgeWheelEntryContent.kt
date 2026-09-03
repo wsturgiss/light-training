@@ -63,9 +63,16 @@ fun NudgeWheelEntryContent(
     fields: List<NudgeFieldConfig>,
     onConfirm: () -> Unit,
     onBack: () -> Unit,
-    // Shows a ":" between fields, e.g. for hours/minutes/seconds duration entry. Not appropriate
-    // for unrelated fields side by side (e.g. weight+reps).
+    // Shows [fieldSeparator] between fields, e.g. ":" for hours/minutes/seconds duration entry,
+    // or "." for whole/tenths distance entry. Not appropriate for unrelated fields side by side
+    // (e.g. weight+reps).
     showFieldSeparators: Boolean = false,
+    fieldSeparator: String = ":",
+    // One label centered under the whole row of wheels, instead of each field showing its own
+    // label under just its own wheel (e.g. "Distance" under a whole+tenths pair, where a
+    // per-field label would read as attached to the whole-number wheel alone). Mutually exclusive
+    // with per-field labels -- pass empty [NudgeFieldConfig.label]s when using this.
+    centeredLabel: String? = null,
     // Adds play/pause (bottom-left) and reset (bottom-right, paused only) alongside the confirm
     // button, for a wheel that doubles as a live timer.
     timerControls: TimerControls? = null,
@@ -80,29 +87,40 @@ fun NudgeWheelEntryContent(
             center = LightTopBarCenter.Text(title),
         )
 
-        Row(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-        ) {
-            fields.forEachIndexed { index, field ->
-                if (index > 0 && showFieldSeparators) {
-                    // Mirrors NudgeFieldColumn's wheel-then-label structure so the colon centers
-                    // on the wheel itself, not on the wheel+label column as a whole.
-                    Column(modifier = Modifier.fillMaxHeight()) {
-                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            LightText(
-                                text = ":",
-                                variant = LightTextVariant.Title,
-                                modifier = Modifier.offset(y = (-6).dp),
-                            )
+        Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                fields.forEachIndexed { index, field ->
+                    if (index > 0 && showFieldSeparators) {
+                        // Mirrors NudgeFieldColumn's wheel-then-label structure so the colon
+                        // centers on the wheel itself, not on the wheel+label column as a whole.
+                        Column(modifier = Modifier.fillMaxHeight()) {
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                LightText(
+                                    text = fieldSeparator,
+                                    variant = LightTextVariant.Title,
+                                    modifier = Modifier.offset(y = (-6).dp),
+                                )
+                            }
+                            if (centeredLabel == null) {
+                                LightText(
+                                    text = "",
+                                    variant = LightTextVariant.Detail,
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                )
+                            }
                         }
-                        LightText(
-                            text = "",
-                            variant = LightTextVariant.Detail,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
                     }
+                    NudgeFieldColumn(config = field, showLabel = centeredLabel == null)
                 }
-                NudgeFieldColumn(config = field)
+            }
+            if (centeredLabel != null) {
+                LightText(
+                    text = centeredLabel,
+                    variant = LightTextVariant.Detail,
+                    lighten = true,
+                    align = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
             }
         }
 
@@ -143,7 +161,7 @@ fun NudgeWheelEntryContent(
 }
 
 @Composable
-private fun RowScope.NudgeFieldColumn(config: NudgeFieldConfig) {
+private fun RowScope.NudgeFieldColumn(config: NudgeFieldConfig, showLabel: Boolean = true) {
     Column(
         modifier = Modifier.weight(1f).fillMaxHeight(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -157,12 +175,14 @@ private fun RowScope.NudgeFieldColumn(config: NudgeFieldConfig) {
             enabled = config.wheelEnabled,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
-        LightText(
-            text = config.label,
-            variant = LightTextVariant.Detail,
-            lighten = true,
-            modifier = Modifier.padding(vertical = 8.dp),
-        )
+        if (showLabel) {
+            LightText(
+                text = config.label,
+                variant = LightTextVariant.Detail,
+                lighten = true,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
+        }
     }
 }
 
@@ -233,6 +253,54 @@ fun DurationNudgeEntryContent(
         onConfirm = onDone,
         onBack = onBack,
         timerControls = timerControls,
+    )
+}
+
+/**
+ * Whole+tenths distance entry (e.g. "10.5"), built on [NudgeWheelEntryContent]. Used by the
+ * cardio logging and edit flows. [tenths] is the distance in the user's display unit, scaled by
+ * 10 (e.g. 105 for "10.5") so it can be represented as an [Int] the same way [DurationNudgeEntryContent]
+ * represents a duration as whole seconds.
+ */
+@Composable
+fun DistanceNudgeEntryContent(
+    title: String,
+    tenths: Int,
+    onTenthsChange: (Int) -> Unit,
+    onDone: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val whole = tenths / 10
+    val fraction = tenths % 10
+    val wholeFieldState = rememberTextFieldState(whole.toString())
+    val fractionFieldState = rememberTextFieldState(fraction.toString())
+
+    NudgeWheelEntryContent(
+        title = title,
+        fields = listOf(
+            NudgeFieldConfig(
+                label = "",
+                fieldState = wholeFieldState,
+                wheelRange = 0..99,
+                wheelValue = whole,
+                onWheelValueChange = { onTenthsChange(it * 10 + fraction) },
+                wheelFormat = { it.toString() },
+            ),
+            NudgeFieldConfig(
+                label = "",
+                fieldState = fractionFieldState,
+                wheelRange = 0..9,
+                wheelValue = fraction,
+                onWheelValueChange = { onTenthsChange(whole * 10 + it) },
+                wheelWraps = true,
+                wheelFormat = { it.toString() },
+            ),
+        ),
+        showFieldSeparators = true,
+        centeredLabel = "Distance",
+        fieldSeparator = ".",
+        onConfirm = onDone,
+        onBack = onBack,
     )
 }
 

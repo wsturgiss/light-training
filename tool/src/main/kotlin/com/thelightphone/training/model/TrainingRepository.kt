@@ -145,12 +145,13 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
 
     /** Logs a completed cardio/interval result. [durationSeconds] may come from manual entry,
      * the in-app timer, or a combination of the two -- resolved by the caller before this is
-     * called. [distance]/[pace] are only meaningful when the exercise has those tracked fields
-     * configured, but are accepted as-is here. */
+     * called. [distanceKm]/[pace] are only meaningful when the exercise has those tracked fields
+     * configured, but are accepted as-is here. [distanceKm] is always kilometers -- callers
+     * convert from the user's display [DistanceUnit] before calling this. */
     suspend fun insertCardioSession(
         exerciseId: String,
         durationSeconds: Int,
-        distance: String?,
+        distanceKm: Double?,
         pace: String?,
         date: java.time.LocalDate = java.time.LocalDate.now(),
     ): CardioSession {
@@ -159,7 +160,7 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
             exerciseId = exerciseId,
             date = date,
             durationSeconds = durationSeconds,
-            distance = distance,
+            distanceKm = distanceKm,
             pace = pace,
         )
         cardioSessionDao.insert(session.toEntity())
@@ -174,12 +175,12 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
     suspend fun updateCardioSession(
         id: String,
         durationSeconds: Int,
-        distance: String?,
+        distanceKm: Double?,
         pace: String?,
     ) {
         val existing = cardioSessionDao.getById(id) ?: return
         cardioSessionDao.update(
-            existing.copy(durationSeconds = durationSeconds, distance = distance, pace = pace),
+            existing.copy(durationSeconds = durationSeconds, distanceKm = distanceKm, pace = pace),
         )
     }
 
@@ -323,7 +324,7 @@ private fun CardioSessionEntity.toModel(): CardioSession = CardioSession(
     exerciseId = exerciseId,
     date = java.time.LocalDate.parse(date),
     durationSeconds = durationSeconds,
-    distance = distance,
+    distanceKm = distanceKm,
     pace = pace,
     createdAt = createdAt,
 )
@@ -333,7 +334,7 @@ private fun CardioSession.toEntity(): CardioSessionEntity = CardioSessionEntity(
     exerciseId = exerciseId,
     date = date.toString(),
     durationSeconds = durationSeconds,
-    distance = distance,
+    distanceKm = distanceKm,
     pace = pace,
     createdAt = createdAt,
 )
@@ -379,6 +380,9 @@ private fun defaultMuscleGroups(): List<MuscleGroup> = listOf(
     MuscleGroup("full_body", "Full Body"),
 )
 
+/** "running"'s tracked fields must stay in sync with [TrainingDatabase.MIGRATION_7_8], which
+ * sets the same value for users upgrading from before distance tracking was the default
+ * (migrations don't run on a fresh install). */
 private fun defaultExercises(): List<Exercise> = listOf(
     Exercise(
         id = "bench-press",
@@ -398,7 +402,7 @@ private fun defaultExercises(): List<Exercise> = listOf(
         primaryMuscleGroupId = "quads",
         secondaryMuscleGroupIds = listOf("glutes", "hamstrings"),
     ),
-    Exercise(id = "running", name = "Running", primaryMuscleGroupId = "cardio"),
+    Exercise(id = "running", name = "Running", primaryMuscleGroupId = "cardio", trackedFields = setOf(TrackedField.DISTANCE)),
     Exercise(id = "rowing", name = "Rowing", primaryMuscleGroupId = "cardio"),
     Exercise(id = "cycling", name = "Cycling", primaryMuscleGroupId = "cardio"),
     Exercise(id = "swimming", name = "Swimming", primaryMuscleGroupId = "cardio"),

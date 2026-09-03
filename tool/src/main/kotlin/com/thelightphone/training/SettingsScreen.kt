@@ -41,6 +41,7 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.sdk.buildDatabase
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.IntervalScheme
 import com.thelightphone.training.model.MuscleGroup
@@ -49,6 +50,7 @@ import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WeightUnit
+import com.thelightphone.training.model.distanceUnitFromStorage
 import com.thelightphone.training.model.weightUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -129,6 +131,7 @@ data class SettingsUiState(
     val draftSecondaryMuscleGroupIds: Set<String> = emptySet(),
     val draftTrackedFields: Set<TrackedField> = emptySet(),
     val weightUnit: WeightUnit = WeightUnit.KG,
+    val distanceUnit: DistanceUnit = DistanceUnit.KM,
     val intervalSchemes: List<IntervalScheme> = emptyList(),
     val draftSchemeId: String? = null,
     val draftSchemeName: String = "",
@@ -181,6 +184,10 @@ class SettingsViewModel(
             val unit = weightUnitFromStorage(dataStore.data.first()[TrainingPreferences.WEIGHT_UNIT])
             _uiState.update { it.copy(weightUnit = unit) }
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            val unit = distanceUnitFromStorage(dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT])
+            _uiState.update { it.copy(distanceUnit = unit) }
+        }
     }
 
     fun toggleWeightUnit() {
@@ -188,6 +195,14 @@ class SettingsViewModel(
         _uiState.update { it.copy(weightUnit = next) }
         viewModelScope.launch(Dispatchers.IO) {
             dataStore.edit { prefs -> prefs[TrainingPreferences.WEIGHT_UNIT] = next.name }
+        }
+    }
+
+    fun toggleDistanceUnit() {
+        val next = _uiState.value.distanceUnit.next()
+        _uiState.update { it.copy(distanceUnit = next) }
+        viewModelScope.launch(Dispatchers.IO) {
+            dataStore.edit { prefs -> prefs[TrainingPreferences.DISTANCE_UNIT] = next.name }
         }
     }
 
@@ -653,6 +668,8 @@ class SettingsScreen(
             TrainingDatabase.MIGRATION_4_5,
             TrainingDatabase.MIGRATION_5_6,
             TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
         )
     }
 
@@ -691,6 +708,7 @@ class SettingsScreen(
                         onExercises = viewModel::goToExercises,
                         onIntervalSchemes = viewModel::goToIntervalSchemes,
                         onToggleWeightUnit = viewModel::toggleWeightUnit,
+                        onToggleDistanceUnit = viewModel::toggleDistanceUnit,
                     )
 
                     SettingsMode.MuscleGroupList -> MuscleGroupListContent(
@@ -834,6 +852,7 @@ private fun MenuContent(
     onExercises: () -> Unit,
     onIntervalSchemes: () -> Unit,
     onToggleWeightUnit: () -> Unit,
+    onToggleDistanceUnit: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LightTopBar(
@@ -853,6 +872,11 @@ private fun MenuContent(
                 title = "Weight Unit",
                 value = state.weightUnit.displayName.uppercase(),
                 onClick = onToggleWeightUnit,
+            )
+            SettingsMenuRow(
+                title = "Distance Unit",
+                value = state.distanceUnit.displayName.uppercase(),
+                onClick = onToggleDistanceUnit,
             )
         }
     }

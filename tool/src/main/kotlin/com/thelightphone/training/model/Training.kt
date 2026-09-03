@@ -31,6 +31,34 @@ enum class WeightUnit(val displayName: String) {
 }
 
 /**
+ * The unit distance is displayed/entered in. Cardio sessions always store
+ * distance internally in kilometers ([CardioSession.distanceKm]); this is
+ * purely a display/input preference, converted at the UI layer.
+ */
+enum class DistanceUnit(val displayName: String) {
+    KM("km"),
+    MI("mi");
+
+    /** Converts a value already in this unit into kilometers for storage. */
+    fun toKm(value: Double): Double = when (this) {
+        KM -> value
+        MI -> value * KM_PER_MILE
+    }
+
+    /** Converts a stored kilometer value into this unit for display. */
+    fun fromKm(km: Double): Double = when (this) {
+        KM -> km
+        MI -> km / KM_PER_MILE
+    }
+
+    fun next(): DistanceUnit = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        private const val KM_PER_MILE = 1.609344
+    }
+}
+
+/**
  * A single completed set of a weight exercise: how many reps, and the weight used.
  * [weightKg] is null for bodyweight-only sets.
  */
@@ -96,7 +124,8 @@ data class CardioSession(
     val exerciseId: String,
     val date: LocalDate,
     val durationSeconds: Int,
-    val distance: String? = null,
+    /** Distance, always stored in kilometers regardless of the user's display [DistanceUnit]. */
+    val distanceKm: Double? = null,
     val pace: String? = null,
     /** When this session was created, in epoch millis -- used to order same-day sessions by
      * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */

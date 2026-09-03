@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,9 +35,12 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.training.model.CardioSession
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.TrackedField
 import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
+import com.thelightphone.training.model.distanceUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +50,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 private val cardioDetailDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
@@ -63,8 +69,9 @@ data class CardioSessionDetailUiState(
     val loading: Boolean = true,
     val mode: CardioDetailMode = CardioDetailMode.OVERVIEW,
     val editingField: CardioEditField? = null,
+    val distanceUnit: DistanceUnit = DistanceUnit.KM,
     val draftDurationSeconds: Int? = null,
-    val draftDistance: String = "",
+    val draftDistanceTenths: Int? = null,
     val draftPace: String = "",
 ) {
     val isManaging: Boolean get() = mode == CardioDetailMode.MANAGE
@@ -74,6 +81,7 @@ data class CardioSessionDetailUiState(
 
 class CardioSessionDetailViewModel(
     private val sessionId: String,
+    private val dataStore: DataStore<Preferences>,
     private val repository: TrainingRepository,
 ) : LightViewModel<Unit>() {
 
@@ -84,11 +92,13 @@ class CardioSessionDetailViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val session = repository.getCardioSession(sessionId)
             val exercise = session?.let { s -> repository.exercises.first().find { it.id == s.exerciseId } }
+            val unit = distanceUnitFromStorage(dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT])
             _uiState.update {
                 it.copy(
                     session = session,
                     exerciseName = exercise?.name ?: "Cardio",
                     trackedFields = exercise?.trackedFields.orEmpty(),
+                    distanceUnit = unit,
                     loading = false,
                 )
             }
@@ -105,11 +115,12 @@ class CardioSessionDetailViewModel(
 
     fun startEdit() {
         val session = _uiState.value.session ?: return
+        val unit = _uiState.value.distanceUnit
         _uiState.update {
             it.copy(
                 mode = CardioDetailMode.EDIT,
                 draftDurationSeconds = session.durationSeconds,
-                draftDistance = session.distance.orEmpty(),
+                draftDistanceTenths = session.distanceKm?.let { km -> (unit.fromKm(km) * 10).roundToInt() },
                 draftPace = session.pace.orEmpty(),
             )
         }
@@ -131,15 +142,18 @@ class CardioSessionDetailViewModel(
         _uiState.update { it.copy(draftDurationSeconds = seconds) }
     }
 
-    /** Handles the DISTANCE/PACE text editors; DURATION is set directly via
-     * [updateDraftDuration] from the minutes/seconds nudge editor instead. */
+    fun updateDraftDistanceTenths(tenths: Int) {
+        _uiState.update { it.copy(draftDistanceTenths = tenths) }
+    }
+
+    /** Handles the PACE text editor; DURATION and DISTANCE are set directly via
+     * [updateDraftDuration]/[updateDraftDistanceTenths] from their nudge editors instead. */
     fun submitEditField(rawValue: CharSequence) {
         val field = _uiState.value.editingField ?: return
         val value = rawValue.toString()
         _uiState.update {
             when (field) {
-                CardioEditField.DURATION -> it
-                CardioEditField.DISTANCE -> it.copy(draftDistance = value)
+                CardioEditField.DURATION, CardioEditField.DISTANCE -> it
                 CardioEditField.PACE -> it.copy(draftPace = value)
             }.copy(editingField = null)
         }
@@ -148,15 +162,15 @@ class CardioSessionDetailViewModel(
     suspend fun saveEdit() {
         val state = _uiState.value
         val duration = state.draftDurationSeconds ?: return
-        val distance = state.draftDistance.trim().ifBlank { null }
+        val distanceKm = state.draftDistanceTenths?.let { state.distanceUnit.toKm(it / 10.0) }
         val pace = state.draftPace.trim().ifBlank { null }
         withContext(Dispatchers.IO) {
-            repository.updateCardioSession(id = sessionId, durationSeconds = duration, distance = distance, pace = pace)
+            repository.updateCardioSession(id = sessionId, durationSeconds = duration, distanceKm = distanceKm, pace = pace)
         }
         _uiState.update {
             it.copy(
                 mode = CardioDetailMode.OVERVIEW,
-                session = it.session?.copy(durationSeconds = duration, distance = distance, pace = pace),
+                session = it.session?.copy(durationSeconds = duration, distanceKm = distanceKm, pace = pace),
             )
         }
     }
@@ -193,11 +207,13 @@ class CardioSessionDetailScreen(
             TrainingDatabase.MIGRATION_4_5,
             TrainingDatabase.MIGRATION_5_6,
             TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
         )
     }
 
     override fun createViewModel(): CardioSessionDetailViewModel =
-        CardioSessionDetailViewModel(sessionId, repository)
+        CardioSessionDetailViewModel(sessionId, lightContext.dataStore, repository)
 
     @Composable
     override fun Content() {
@@ -245,15 +261,18 @@ class CardioSessionDetailScreen(
                             onDone = viewModel::cancelEditField,
                             onBack = viewModel::cancelEditField,
                         )
+                    } else if (fieldBeingEdited == CardioEditField.DISTANCE) {
+                        DistanceNudgeEntryContent(
+                            title = "Distance (${state.distanceUnit.displayName})",
+                            tenths = state.draftDistanceTenths ?: 0,
+                            onTenthsChange = viewModel::updateDraftDistanceTenths,
+                            onDone = viewModel::cancelEditField,
+                            onBack = viewModel::cancelEditField,
+                        )
                     } else {
-                        val initialText = if (fieldBeingEdited == CardioEditField.DISTANCE) state.draftDistance else state.draftPace
-                        val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(initialText) }
+                        val fieldTextFieldState = remember(fieldBeingEdited) { TextFieldState(state.draftPace) }
                         LightTextInputEditor(
-                            title = if (fieldBeingEdited == CardioEditField.DISTANCE) {
-                                TrackedField.DISTANCE.displayName
-                            } else {
-                                TrackedField.PACE.displayName
-                            },
+                            title = TrackedField.PACE.displayName,
                             state = fieldTextFieldState,
                             keyboardOptionsFlow = rememberKeyboardOptions(),
                             onSubmit = viewModel::submitEditField,
@@ -320,7 +339,12 @@ private fun CardioSessionOverviewContent(
                         modifier = Modifier.padding(bottom = 16.dp),
                     )
                     DetailRow(label = "Duration", value = formatDuration(session.durationSeconds))
-                    session.distance?.let { DetailRow(label = "Distance", value = it) }
+                    session.distanceKm?.let {
+                        DetailRow(
+                            label = "Distance",
+                            value = "${formatDistance(state.distanceUnit.fromKm(it))} ${state.distanceUnit.displayName}",
+                        )
+                    }
                     session.pace?.let { DetailRow(label = "Pace", value = it) }
                 }
             }
@@ -421,7 +445,8 @@ private fun EditCardioSessionContent(
             if (TrackedField.DISTANCE in state.trackedFields) {
                 LightEditableRow(
                     superscript = "Distance",
-                    label = state.draftDistance.ifBlank { "Not set" },
+                    label = state.draftDistanceTenths?.let { "%.1f %s".format(it / 10.0, state.distanceUnit.displayName) }
+                        ?: "Not set",
                     onClick = { onEditField(TrackedField.DISTANCE) },
                 )
             }

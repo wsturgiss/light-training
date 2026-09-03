@@ -11,6 +11,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
@@ -30,9 +32,12 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.training.model.CardioSession
+import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.TrainingDatabase
+import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WorkoutSession
+import com.thelightphone.training.model.distanceUnitFromStorage
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,12 +70,19 @@ sealed interface LoggedActivity {
     }
 }
 
-class HomeScreenViewModel(private val repository: TrainingRepository) : LightViewModel<Unit>() {
+class HomeScreenViewModel(
+    private val dataStore: DataStore<Preferences>,
+    private val repository: TrainingRepository,
+) : LightViewModel<Unit>() {
 
     val activities = MutableStateFlow<List<LoggedActivity>>(emptyList())
+    val distanceUnit = MutableStateFlow(DistanceUnit.KM)
 
     init {
         reloadSessions()
+        viewModelScope.launch(Dispatchers.IO) {
+            distanceUnit.value = distanceUnitFromStorage(dataStore.data.first()[TrainingPreferences.DISTANCE_UNIT])
+        }
     }
 
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
@@ -116,17 +128,20 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
             TrainingDatabase.MIGRATION_4_5,
             TrainingDatabase.MIGRATION_5_6,
             TrainingDatabase.MIGRATION_6_7,
+            TrainingDatabase.MIGRATION_7_8,
+            TrainingDatabase.MIGRATION_8_9,
         )
     }
 
     override val viewModelClass: Class<HomeScreenViewModel>
         get() = HomeScreenViewModel::class.java
 
-    override fun createViewModel(): HomeScreenViewModel = HomeScreenViewModel(repository)
+    override fun createViewModel(): HomeScreenViewModel = HomeScreenViewModel(lightContext.dataStore, repository)
 
     @Composable
     override fun Content() {
         val activities by viewModel.activities.collectAsState()
+        val distanceUnit by viewModel.distanceUnit.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
 
         LightTheme(colors = themeColors) {
@@ -145,6 +160,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                     } else {
                         ActivityList(
                             activities = activities,
+                            distanceUnit = distanceUnit,
                             onSessionClick = ::openSessionDetail,
                             onCardioSessionClick = ::openCardioSessionDetail,
                         )
@@ -233,6 +249,7 @@ private fun EmptyState() {
 @Composable
 private fun ActivityList(
     activities: List<LoggedActivity>,
+    distanceUnit: DistanceUnit,
     onSessionClick: (WorkoutSession) -> Unit,
     onCardioSessionClick: (CardioSession) -> Unit,
 ) {
@@ -246,6 +263,7 @@ private fun ActivityList(
                 is LoggedActivity.Weight -> SessionRow(activity.session, onClick = { onSessionClick(activity.session) })
                 is LoggedActivity.Cardio -> CardioSessionRow(
                     activity,
+                    distanceUnit = distanceUnit,
                     onClick = { onCardioSessionClick(activity.session) },
                 )
             }
@@ -284,7 +302,7 @@ private fun SessionRow(session: WorkoutSession, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CardioSessionRow(activity: LoggedActivity.Cardio, onClick: () -> Unit) {
+private fun CardioSessionRow(activity: LoggedActivity.Cardio, distanceUnit: DistanceUnit, onClick: () -> Unit) {
     val session = activity.session
     Column(
         modifier = Modifier
@@ -295,7 +313,7 @@ private fun CardioSessionRow(activity: LoggedActivity.Cardio, onClick: () -> Uni
         Row(modifier = Modifier.fillMaxWidth()) {
             val details = buildList {
                 add(formatDuration(session.durationSeconds))
-                session.distance?.let { add(it) }
+                session.distanceKm?.let { add("${formatDistance(distanceUnit.fromKm(it))} ${distanceUnit.displayName}") }
                 session.pace?.let { add(it) }
             }.joinToString(" · ")
             LightText(

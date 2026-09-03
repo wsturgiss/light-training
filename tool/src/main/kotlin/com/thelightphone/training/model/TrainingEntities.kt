@@ -80,7 +80,7 @@ internal data class CardioSessionEntity(
     /** ISO-8601 date string, e.g. "2024-01-31". */
     val date: String,
     @ColumnInfo(name = "duration_seconds") val durationSeconds: Int,
-    val distance: String?,
+    @ColumnInfo(name = "distance_km") val distanceKm: Double?,
     val pace: String?,
     /** Epoch millis, used to order same-day sessions by time; 0 for rows created before this
      * column existed. */
