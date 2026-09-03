@@ -23,20 +23,23 @@ import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import kotlin.math.abs
 
-// The wheel fills whatever space its caller gives it (see BoxWithConstraints below); this is
-// just how many rows are visible at once within that space.
+// Rows visible at once within whatever space the caller gives the wheel (see BoxWithConstraints).
 private const val VISIBLE_ROWS = 3
 
-// How far (in dp) to nudge non-selected rows toward the centered row, purely visually -- this is
-// a rendering-only offset applied after layout, so it doesn't affect scroll position, snapping,
-// or the centered-index calculation above.
+// Visual-only nudge (dp) of non-selected rows toward center; doesn't affect scroll/snap.
 private const val NEIGHBOR_NUDGE_DP = 10
 
-// When wrapping, the range is repeated this many times into one long list, centered on the
-// current value, so spinning past either end of a cycle just continues into the next one
-// instead of stopping. Not truly infinite, but 401 cycles (~200 in either direction) is far more
-// than anyone will ever spin a minutes/seconds wheel in one motion.
+// Repeats a wrapping range into one long list, centered on the current value, so spinning past
+// either end continues into the next cycle instead of stopping. 401 cycles (~200 either way) is
+// far more than anyone will ever spin in one motion.
 private const val WRAP_CYCLE_COUNT = 401
+
+// Heading's font size as a fraction of Title's (see LightTheme.kt), for shrinking non-centered
+// rows via graphicsLayer scale instead of composing a second Text per row.
+private const val NEIGHBOR_SCALE = 38f / 115f
+
+// Fade for non-centered rows, standing in for LightText's `lighten` color swap.
+private const val NEIGHBOR_ALPHA = 0.55f
 
 /**
  * A vertical scroll wheel for picking a value out of [range]: drag or fling to spin it, and it
@@ -77,11 +80,9 @@ fun WheelNumberPicker(
     )
     val flingBehavior = rememberSnapFlingBehavior(listState)
 
-    // Deliberately NOT read via `by` in this composable's body -- that would resubscribe this
-    // whole function to recomposition on every selection change, once per visible item, on every
-    // fling frame across three wheels at once. Read only inside the graphicsLayer draw-phase
-    // lambdas below instead, which update on scroll without triggering recomposition, measurement,
-    // or layout at all.
+    // Not read via `by` here -- that would recompose this whole function on every selection
+    // change. Read only inside graphicsLayer draw-phase lambdas below, which update on scroll
+    // with no recomposition/measure/layout.
     val centeredIndexState = remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -93,8 +94,7 @@ fun WheelNumberPicker(
         }
     }
 
-    // Keep the wheel positioned at `value` when it changes from outside (e.g. after typing a
-    // value directly), but never fight the user's own in-progress drag/fling.
+    // Follow external `value` changes, but never fight an in-progress drag/fling.
     LaunchedEffect(value) {
         if (listState.isScrollInProgress) return@LaunchedEffect
         if (valueAt(listState.firstVisibleItemIndex) == value && listState.firstVisibleItemScrollOffset == 0) return@LaunchedEffect
@@ -117,35 +117,26 @@ fun WheelNumberPicker(
     ) {
         items(totalItems, key = { it }) { index ->
             val text = formatValue(valueAt(index))
+            // One Text per row, not two (Title + Heading), to halve text layout cost during a
+            // fling. Selection is a scale/fade/translate in one draw-only graphicsLayer lambda.
             Box(
                 modifier = Modifier
                     .height(itemHeight)
                     .fillMaxWidth()
                     .graphicsLayer {
-                        val centered = centeredIndexState.value
+                        val isCentered = index == centeredIndexState.value
                         translationY = when {
-                            index == centered -> 0f
-                            index < centered -> NEIGHBOR_NUDGE_DP.dp.toPx()
+                            isCentered -> 0f
+                            index < centeredIndexState.value -> NEIGHBOR_NUDGE_DP.dp.toPx()
                             else -> -NEIGHBOR_NUDGE_DP.dp.toPx()
                         }
+                        alpha = if (isCentered) 1f else NEIGHBOR_ALPHA
+                        scaleX = if (isCentered) 1f else NEIGHBOR_SCALE
+                        scaleY = if (isCentered) 1f else NEIGHBOR_SCALE
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                // Both sizes are always composed here, and selection just toggles which one is
-                // visible via a draw-only alpha flip read from state inside the graphicsLayer
-                // lambda -- no recomposition, remeasure, or relayout happens as the selection
-                // moves during a fling.
-                LightText(
-                    text = text,
-                    variant = LightTextVariant.Title,
-                    modifier = Modifier.graphicsLayer { alpha = if (index == centeredIndexState.value) 1f else 0f },
-                )
-                LightText(
-                    text = text,
-                    variant = LightTextVariant.Heading,
-                    lighten = true,
-                    modifier = Modifier.graphicsLayer { alpha = if (index == centeredIndexState.value) 0f else 1f },
-                )
+                LightText(text = text, variant = LightTextVariant.Title)
             }
         }
     }
