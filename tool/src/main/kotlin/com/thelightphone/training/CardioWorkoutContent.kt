@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import android.os.SystemClock
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +77,32 @@ class CardioWorkoutScreen(
         )
     }
 
+    // Held on the screen (not inside `remember`) so `willShow()` -- called by the SDK when this
+    // screen becomes visible again, e.g. waking from sleep -- can resync it. See
+    // [syncDurationFromWallClock].
+    private var isTimerRunning by mutableStateOf(false)
+    private var durationSeconds by mutableStateOf<Int?>(null)
+    private var timerStartRealtimeMillis by mutableStateOf(0L)
+    private var timerBaseSecondsAtStart by mutableStateOf(0)
+
+    /**
+     * Anchors the running timer to a wall-clock reference instead of counting 1-second ticks,
+     * since the tick loop can get suspended while the screen is asleep (missed/delayed
+     * `delay(1000)` wakeups) and would otherwise silently under-count. `elapsedRealtime` keeps
+     * advancing through sleep (unlike `currentTimeMillis`, it's immune to clock changes).
+     */
+    private fun syncDurationFromWallClock() {
+        if (!isTimerRunning) return
+        val elapsedSeconds = (SystemClock.elapsedRealtime() - timerStartRealtimeMillis) / 1000
+        durationSeconds = timerBaseSecondsAtStart + elapsedSeconds.toInt()
+    }
+
+    // Catches the timer up immediately when the screen becomes visible again (e.g. waking from
+    // sleep), rather than waiting for the next 1-second tick.
+    override fun willShow() {
+        syncDurationFromWallClock()
+    }
+
     @Composable
     override fun Content() {
         val themeColors by LightThemeController.colors.collectAsState()
@@ -84,13 +111,9 @@ class CardioWorkoutScreen(
         var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
         var cardioExercises by remember { mutableStateOf<List<Exercise>>(emptyList()) }
         var isLoadingExercises by remember { mutableStateOf(true) }
-        var durationSeconds by remember { mutableStateOf<Int?>(null) }
         var distanceTenths by remember { mutableStateOf<Int?>(null) }
         var editingField by remember { mutableStateOf<LogField?>(null) }
         var isSaving by remember { mutableStateOf(false) }
-        // Lives at this level, not inside the duration editor, so it keeps running (or stays
-        // paused at its last value) across navigating away from and back to that screen.
-        var isTimerRunning by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
         var distanceUnit by remember { mutableStateOf(DistanceUnit.KM) }
 
@@ -104,9 +127,13 @@ class CardioWorkoutScreen(
         }
 
         LaunchedEffect(isTimerRunning) {
+            if (isTimerRunning) {
+                timerStartRealtimeMillis = SystemClock.elapsedRealtime()
+                timerBaseSecondsAtStart = durationSeconds ?: 0
+            }
             while (isTimerRunning) {
                 delay(1000)
-                durationSeconds = (durationSeconds ?: 0) + 1
+                syncDurationFromWallClock()
             }
         }
 
@@ -174,7 +201,11 @@ class CardioWorkoutScreen(
                                 timerControls = TimerControls(
                                     isRunning = isTimerRunning,
                                     onToggleRunning = { isTimerRunning = !isTimerRunning },
-                                    onReset = { durationSeconds = 0 },
+                                    onReset = {
+                                        durationSeconds = 0
+                                        timerBaseSecondsAtStart = 0
+                                        timerStartRealtimeMillis = SystemClock.elapsedRealtime()
+                                    },
                                 ),
                             )
                         } else {
