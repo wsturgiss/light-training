@@ -18,7 +18,7 @@ a tool for tracking lifting and cardio workouts built with the light-sdk for the
 - Weight training
   - RPE?
   - View previous reps/sets/weights of an exercise
-  - Use previous workout as a template for a new workout
+  - [x] Use previous workout as a template for a new workout
 - Trends / Analytics
   - Sets per time period
     - per muscle group

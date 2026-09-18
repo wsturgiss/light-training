@@ -211,6 +211,25 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         sessionDao.replaceFullSession(sessionEntity, exercisesWithSets)
     }
 
+    /**
+     * Persists a new session dated [date] that duplicates [sourceId]'s exercises -- same
+     * exercises in the same order, each with the same sets (reps *and* weights) -- so it can be
+     * used as a template and then adjusted. Returns the new session, or null if [sourceId] no
+     * longer exists. The copy is fully independent: editing either session afterwards leaves
+     * the other untouched.
+     */
+    suspend fun copySession(sourceId: String, date: java.time.LocalDate = java.time.LocalDate.now()): WorkoutSession? {
+        val source = getSession(sourceId) ?: return null
+        val copy = source.copy(
+            id = UUID.randomUUID().toString(),
+            name = "Workout $date",
+            date = date,
+            createdAt = System.currentTimeMillis(),
+        )
+        insertSession(copy)
+        return copy
+    }
+
     /** Deletes a session and all its exercises and sets. */
     suspend fun deleteSession(id: String) {
         sessionDao.deleteSetsForSession(id)

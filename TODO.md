@@ -1,5 +1,22 @@
 # light-training
 
+## Copy a previous workout when starting a strength session
+- [x] `TrainingRepository.copySession(sourceId, date)`: duplicates a session's exercises (same
+      order) and sets (reps *and* weights) into a new session dated today; returns null if the
+      source is gone.
+- [x] New `StrengthStartScreen` (+ `StrengthStartChoice` result): shown after picking Strength on
+      `WorkoutStyleScreen`. Offers "Start empty workout" plus a list of past strength sessions
+      (muscle groups, date, exercise/set counts). Sessions with no exercises are filtered out.
+      Reports the choice back via `goBack` so it pops before `SessionDetailScreen` goes on.
+- [x] `HomeScreen`: STRENGTH now routes through `StrengthStartScreen`;
+      `HomeScreenViewModel.createAndInsertCopyOf` falls back to an empty session if the source
+      was deleted underneath the picker.
+- [x] Compiles clean (`./gradlew :tool:compileDebugKotlin`).
+- [ ] Manual on-device verification: pick Strength → start empty still works;
+      copy a session and confirm exercises/sets/weights/order match; back out of the new workout
+      and land on home (not the picker); copy shows as a separate session dated today, and
+      editing it leaves the original untouched; picker with zero logged sessions shows the hint.
+
 ## Unify new-workout creation with editing + reordering + delete workout (option B)
 - [x] Add `suspend fun deleteSession(id: String)` to `TrainingRepository` (uses existing dao `deleteSetsForSession`/`deleteExercisesForSession`/`deleteSessionById`).
 - [x] Add workout-level delete support + confirmation in `SessionDetailViewModel` (plus new modes + mutators).

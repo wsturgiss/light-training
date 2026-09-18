@@ -1,4 +1,6 @@
-When making coding changes, don't bother trying to build currently.  You are temporarily stuck in WSL2 and the build tools are over in android studio in windows.  Ask the user to do it.  
+Build your own changes before handing them over — the full toolchain is on this machine (Arch Linux; the old Windows/WSL2 split is gone, so don't ask the user to build for you). `./gradlew :tool:compileDebugKotlin` is the fast check while iterating; `./gradlew :tool:assembleDebug` produces a signed debug APK. The Android SDK path comes from `sdk.dir` in `local.properties` (untracked, already set up locally).
+
+Building is not the same as verifying. There are no tests under `tool/`, and CircleCI only publishes the builder image on tags — it doesn't gate this code. A clean compile says nothing about whether a flow actually behaves right on-device, so still hand the user a short list of what to exercise by hand for UI/behaviour changes.
 
 Available icons live in `sdk/ui/src/main/kotlin/com/thelightphone/sdk/ui/LightIcons.kt` (the `LightIcons` object). Check there before assuming an icon doesn't exist or adding a new drawable.
 
