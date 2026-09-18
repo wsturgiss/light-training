@@ -17,7 +17,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
@@ -588,7 +587,7 @@ private fun SessionOverviewContent(
 
                             if (exercise.sets.isEmpty()) {
                                 LightText(
-                                    text = "No sets logged",
+                                    text = "No sets yet",
                                     variant = LightTextVariant.Detail,
                                     lighten = true,
                                 )
@@ -605,9 +604,9 @@ private fun SessionOverviewContent(
                                         lighten = true,
                                         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
                                     )
-                                    loggedSets.forEachIndexed { sectionIndex, (setIndex, set) ->
+                                    loggedSets.forEachIndexed { _, (setIndex, set) ->
                                         SetRow(
-                                            label = setRowLabel(sectionIndex + 1, set, state.weightUnit),
+                                            label = setRowLabel(setIndex + 1, set, state.weightUnit),
                                             muted = false,
                                             showConfirm = false,
                                             onEdit = { onEditSet(exerciseIndex, setIndex) },
@@ -627,9 +626,9 @@ private fun SessionOverviewContent(
                                             bottom = 2.dp,
                                         ),
                                     )
-                                    suggestedSets.forEachIndexed { sectionIndex, (setIndex, set) ->
+                                    suggestedSets.forEachIndexed { _, (setIndex, set) ->
                                         SetRow(
-                                            label = setRowLabel(sectionIndex + 1, set, state.weightUnit),
+                                            label = setRowLabel(setIndex + 1, set, state.weightUnit),
                                             muted = true,
                                             showConfirm = true,
                                             onEdit = { onEditSet(exerciseIndex, setIndex) },
@@ -640,6 +639,8 @@ private fun SessionOverviewContent(
                                 }
                             }
 
+                            val hasSuggestedSets = exercise.sets.any { it.status == SetStatus.SUGGESTED }
+                            val addSetLabel = if (hasSuggestedSets) "Log set" else "Add set"
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -650,10 +651,10 @@ private fun SessionOverviewContent(
                                 LightIcon(
                                     icon = LightIcons.ADD,
                                     size = 2f,
-                                    contentDescription = "Add set",
+                                    contentDescription = addSetLabel,
                                 )
                                 LightText(
-                                    text = "Add set",
+                                    text = addSetLabel,
                                     variant = LightTextVariant.Detail,
                                     lighten = true,
                                     modifier = Modifier.padding(start = 8.dp),
@@ -977,8 +978,7 @@ private fun SetRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp, horizontal = 10.dp)
-            .then(if (muted) Modifier.alpha(0.55f) else Modifier),
+            .padding(vertical = 4.dp, horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LightText(

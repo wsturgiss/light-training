@@ -10,6 +10,8 @@
 - [x] Session overview UI: **Logged** section (full contrast) then **Suggested** (muted/faded);
       section headers hidden when empty; suggested rows have ACCEPT + TRASH; tap row opens wheel
       editor (no separate edit button).
+- [x] UX polish: mute label only (ACCEPT/TRASH full opacity); "Add set" → "Log set" when
+      Suggested present; continuous set numbering across Logged+Suggested; empty copy "No sets yet".
 - [x] Compiles clean (`./gradlew :tool:compileDebugKotlin`).
 - [ ] Manual on-device verification: copy previous workout → sets appear under Suggested (muted)
       with accept+trash; accept moves set into Logged; edit a suggested set (tap row) and confirm
