@@ -49,6 +49,8 @@ internal data class WeightSetEntity(
     @ColumnInfo(name = "order_index") val orderIndex: Int,
     val reps: Int,
     @ColumnInfo(name = "weight_kg") val weightKg: Double?,
+    /** [SetStatus] name: LOGGED or SUGGESTED. Existing rows default to LOGGED. */
+    @ColumnInfo(name = "status", defaultValue = "'LOGGED'") val status: String = SetStatus.LOGGED.name,
 )
 
 internal data class LoggedWeightExerciseWithSets(

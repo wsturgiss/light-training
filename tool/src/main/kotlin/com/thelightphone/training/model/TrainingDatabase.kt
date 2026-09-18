@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         IntervalPresetEntity::class,
         CardioSessionEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class TrainingDatabase : RoomDatabase() {
@@ -182,6 +182,19 @@ abstract class TrainingDatabase : RoomDatabase() {
 
                 db.execSQL("DROP TABLE `cardio_sessions`")
                 db.execSQL("ALTER TABLE `cardio_sessions_new` RENAME TO `cardio_sessions`")
+            }
+        }
+
+        /**
+         * Adds a status column to exercise_sets so each set can be either LOGGED (actually
+         * recorded) or SUGGESTED (template from a copied workout, awaiting accept). Existing
+         * rows default to LOGGED -- they were already recorded before this distinction existed.
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `exercise_sets` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'LOGGED'",
+                )
             }
         }
     }

@@ -1,5 +1,22 @@
 # light-training
 
+## Suggested vs logged strength sets
+- [x] `SetStatus` (LOGGED | SUGGESTED) on `WeightSet` + Room `exercise_sets.status` column;
+      `MIGRATION_9_10` (default existing rows to LOGGED); version 10; all `buildDatabase` call
+      sites updated.
+- [x] `TrainingRepository.copySession`: copied sets always land as SUGGESTED (templates).
+- [x] Manual add-set mid-workout creates LOGGED sets; editing a suggested set preserves SUGGESTED
+      (no auto-promote); accept/confirm promotes SUGGESTED → LOGGED.
+- [x] Session overview UI: **Logged** section (full contrast) then **Suggested** (muted/faded);
+      section headers hidden when empty; suggested rows have ACCEPT + TRASH; tap row opens wheel
+      editor (no separate edit button).
+- [x] Compiles clean (`./gradlew :tool:compileDebugKotlin`).
+- [ ] Manual on-device verification: copy previous workout → sets appear under Suggested (muted)
+      with accept+trash; accept moves set into Logged; edit a suggested set (tap row) and confirm
+      it stays Suggested; add a set mid-workout → appears under Logged; trash works in both
+      sections; empty sections hide their headers; existing (pre-migration) sessions still show
+      sets as Logged.
+
 ## Copy a previous workout when starting a strength session
 - [x] `TrainingRepository.copySession(sourceId, date)`: duplicates a session's exercises (same
       order) and sets (reps *and* weights) into a new session dated today; returns null if the

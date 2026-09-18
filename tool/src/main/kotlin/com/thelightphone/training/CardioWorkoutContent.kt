@@ -73,6 +73,7 @@ class CardioWorkoutScreen(
             TrainingDatabase.MIGRATION_6_7,
             TrainingDatabase.MIGRATION_7_8,
             TrainingDatabase.MIGRATION_8_9,
+            TrainingDatabase.MIGRATION_9_10,
         )
     }
 
