@@ -15,6 +15,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -81,9 +83,10 @@ fun WheelNumberPicker(
     )
     val flingBehavior = rememberSnapFlingBehavior(listState)
 
-    // Not read via `by` here -- that would recompose this whole function on every selection
-    // change. Read only inside graphicsLayer draw-phase lambdas below, which update on scroll
-    // with no recomposition/measure/layout.
+    // Never read via `by` / in composition -- that would recompose this whole function on every
+    // selection change. Read only inside the graphicsLayer draw-phase lambdas below (which update
+    // on scroll with no recomposition/measure/layout) and inside the snapshotFlow that reports
+    // the selection outwards.
     val centeredIndexState = remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -102,12 +105,17 @@ fun WheelNumberPicker(
         listState.scrollToItem(indexOfValueNear(value, anchorIndex = listState.firstVisibleItemIndex))
     }
 
-    // Report the settled value once scrolling stops.
-    val centeredIndex by centeredIndexState
-    LaunchedEffect(listState.isScrollInProgress, centeredIndex) {
-        if (listState.isScrollInProgress) return@LaunchedEffect
-        val settledValue = valueAt(centeredIndex)
-        if (settledValue != value) onValueChange(settledValue)
+    // Report the centered value as it changes, rather than waiting for the scroll to stop:
+    // `isScrollInProgress` stays true for the whole fling *and* the snap animation that follows
+    // it, so a value that already looks centered wouldn't have been reported yet if the user
+    // confirms right away -- the caller would save the value from before the spin.
+    val currentValue by rememberUpdatedState(value)
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    LaunchedEffect(listState, cycleSize, range.first) {
+        snapshotFlow { valueAt(centeredIndexState.value) }
+            .collect { centeredValue ->
+                if (centeredValue != currentValue) currentOnValueChange(centeredValue)
+            }
     }
 
     LazyColumn(
