@@ -20,7 +20,6 @@ import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
-import com.thelightphone.sdk.ui.LightEditableRow
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightText

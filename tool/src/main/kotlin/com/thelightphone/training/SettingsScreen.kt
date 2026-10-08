@@ -26,7 +26,6 @@ import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.rememberKeyboardOptions
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
-import com.thelightphone.sdk.ui.LightEditableRow
 import com.thelightphone.sdk.ui.LightFullscreenModal
 import com.thelightphone.sdk.ui.LightIcon
 import com.thelightphone.sdk.ui.LightIcons

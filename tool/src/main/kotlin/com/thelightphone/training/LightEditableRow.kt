@@ -1,4 +1,4 @@
-package com.thelightphone.sdk.ui
+package com.thelightphone.training
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +8,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.thelightphone.sdk.ui.LightIcon
+import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightText
+import com.thelightphone.sdk.ui.LightTextVariant
+import com.thelightphone.sdk.ui.LightTheme
+import com.thelightphone.sdk.ui.LightThemeColors
+import com.thelightphone.sdk.ui.gridUnitsAsDp
+import com.thelightphone.sdk.ui.lightClickable
 
 private const val ROW_VERTICAL_PADDING_UNITS = 0.5f
 private const val CONTENT_VERTICAL_PADDING_UNITS = 0.25f
@@ -27,7 +35,7 @@ private const val EDIT_ICON_SIZE_UNITS = 2f
  * targets, and the edit affordance stay consistent across screens.
  */
 @Composable
-fun LightEditableRow(
+internal fun LightEditableRow(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
