@@ -1,4 +1,6 @@
-Build directly with `./gradlew` — the Android SDK is installed locally (see `local.properties`). Verify coding changes compile before handing them back, e.g. `./gradlew :tool:assembleDebug :tool:testDebugUnitTest`. A full build of a single module takes about a minute from cold.
+Build your own changes before handing them over — the full toolchain is on this machine (Arch Linux; the old Windows/WSL2 split is gone, so don't ask the user to build for you). `./gradlew :tool:compileDebugKotlin` is the fast check while iterating; `./gradlew :tool:assembleDebug` produces a signed debug APK, and `./gradlew :tool:testDebugUnitTest` runs the JVM unit tests. The Android SDK path comes from `sdk.dir` in `local.properties` (untracked, already set up locally).
+
+Building is not the same as verifying. The unit tests under `tool/` only cover plain-JVM logic (e.g. the backup export) — Room migrations and UI can't be tested off-device here — and CircleCI only publishes the builder image on tags, so it doesn't gate this code. A clean build says nothing about whether a flow actually behaves right on-device, so still hand the user a short list of what to exercise by hand for UI/behaviour changes.
 
 Available icons live in `sdk/ui/src/main/kotlin/com/thelightphone/sdk/ui/LightIcons.kt` (the `LightIcons` object). Check there before assuming an icon doesn't exist or adding a new drawable.
 

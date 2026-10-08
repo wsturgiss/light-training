@@ -82,6 +82,9 @@ internal interface CardioSessionDao {
     @Query("SELECT * FROM cardio_sessions WHERE id = :id")
     suspend fun getById(id: String): CardioSessionEntity?
 
+    @Query("SELECT * FROM cardio_sessions")
+    suspend fun getAll(): List<CardioSessionEntity>
+
     @Query("DELETE FROM cardio_sessions WHERE id = :id")
     suspend fun deleteById(id: String)
 

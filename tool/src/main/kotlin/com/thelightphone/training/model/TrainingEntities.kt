@@ -32,6 +32,9 @@ internal data class WorkoutSessionEntity(
     /** Epoch millis, used to order same-day sessions by time; 0 for rows created before this
      * column existed. */
     @ColumnInfo(name = "created_at", defaultValue = "0") val createdAt: Long = 0,
+    /** Epoch millis of the last edit to this session (or its exercises/sets). Drives which
+     * backup window the session's exported file lands in -- see SessionExportStore. */
+    @ColumnInfo(name = "updated_at", defaultValue = "0") val updatedAt: Long = 0,
 )
 
 @Entity(tableName = "logged_exercises")
@@ -49,6 +52,8 @@ internal data class WeightSetEntity(
     @ColumnInfo(name = "order_index") val orderIndex: Int,
     val reps: Int,
     @ColumnInfo(name = "weight_kg") val weightKg: Double?,
+    /** [SetStatus] name: LOGGED or SUGGESTED. Existing rows default to LOGGED. */
+    @ColumnInfo(name = "status", defaultValue = "'LOGGED'") val status: String = SetStatus.LOGGED.name,
 )
 
 internal data class LoggedWeightExerciseWithSets(
@@ -85,6 +90,9 @@ internal data class CardioSessionEntity(
     /** Epoch millis, used to order same-day sessions by time; 0 for rows created before this
      * column existed. */
     @ColumnInfo(name = "created_at", defaultValue = "0") val createdAt: Long = 0,
+    /** Epoch millis of the last edit to this session. Drives which backup window the session's
+     * exported file lands in -- see SessionExportStore. */
+    @ColumnInfo(name = "updated_at", defaultValue = "0") val updatedAt: Long = 0,
 )
 
 internal data class WorkoutSessionWithExercises(

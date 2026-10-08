@@ -11,6 +11,5 @@ fun <T : RoomDatabase> SealedLightContext.buildDatabase(
 ): T {
     return Room.databaseBuilder(androidContext.applicationContext, dbClass, dbName)
         .addMigrations(*migrations)
-        .fallbackToDestructiveMigration()
         .build()
 }

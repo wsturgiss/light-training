@@ -59,12 +59,23 @@ enum class DistanceUnit(val displayName: String) {
 }
 
 /**
- * A single completed set of a weight exercise: how many reps, and the weight used.
- * [weightKg] is null for bodyweight-only sets.
+ * Whether a strength set is a template awaiting confirmation ([SUGGESTED]) or a set the
+ * user has actually recorded ([LOGGED]). Copied workouts start as suggested; manually
+ * added sets land as logged; accepting a suggested set promotes it to logged.
+ */
+enum class SetStatus {
+    LOGGED,
+    SUGGESTED,
+}
+
+/**
+ * A single set of a weight exercise: how many reps, the weight used, and whether it is
+ * still a suggestion or has been logged. [weightKg] is null for bodyweight-only sets.
  */
 data class WeightSet(
     val reps: Int,
     val weightKg: Double?,
+    val status: SetStatus = SetStatus.LOGGED,
 )
 
 /**
@@ -105,6 +116,9 @@ data class WorkoutSession(
     /** When this session was created, in epoch millis -- used to order same-day sessions by
      * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
     val createdAt: Long = System.currentTimeMillis(),
+    /** When this session was last edited, in epoch millis. Stamped by [TrainingRepository] on
+     * every write; drives backup windowing, not display. */
+    val updatedAt: Long = createdAt,
 ) {
     val muscleGroups: List<MuscleGroup>
         get() = exercises.map { it.muscleGroup }.distinct()
@@ -130,4 +144,7 @@ data class CardioSession(
     /** When this session was created, in epoch millis -- used to order same-day sessions by
      * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
     val createdAt: Long = System.currentTimeMillis(),
+    /** When this session was last edited, in epoch millis. Stamped by [TrainingRepository] on
+     * every write; drives backup windowing, not display. */
+    val updatedAt: Long = createdAt,
 )

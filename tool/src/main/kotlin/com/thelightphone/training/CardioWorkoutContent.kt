@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightEditableRow
@@ -34,10 +33,10 @@ import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.TrackedField
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.distanceUnitFromStorage
+import com.thelightphone.training.model.trainingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -63,19 +62,7 @@ class CardioWorkoutScreen(
     sealedActivity: SealedLightActivity,
 ) : SimpleLightScreen<Unit>(sealedActivity) {
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     // Held on the screen (not inside `remember`) so `willShow()` -- called by the SDK when this
     // screen becomes visible again, e.g. waking from sleep -- can resync it. See

@@ -18,7 +18,6 @@ import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.SimpleLightScreen
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
@@ -33,11 +32,11 @@ import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.training.model.CardioSession
 import com.thelightphone.training.model.DistanceUnit
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WorkoutSession
 import com.thelightphone.training.model.distanceUnitFromStorage
+import com.thelightphone.training.model.trainingRepository
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +101,16 @@ class HomeScreenViewModel(
         return session.id
     }
 
+    /**
+     * Creates and persists a new session dated today carrying over [sourceId]'s exercises and
+     * sets. Falls back to an empty session if the source was deleted between the picker loading
+     * it and the user tapping it.
+     */
+    suspend fun createAndInsertCopyOf(sourceId: String): String {
+        repository.ensureSeeded()
+        return repository.copySession(sourceId)?.id ?: createAndInsertNewSession()
+    }
+
     private fun reloadSessions() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.ensureSeeded()
@@ -119,19 +128,7 @@ class HomeScreenViewModel(
 @InitialScreen
 class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeScreenViewModel>(sealedActivity) {
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     override val viewModelClass: Class<HomeScreenViewModel>
         get() = HomeScreenViewModel::class.java
@@ -161,7 +158,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                         ActivityList(
                             activities = activities,
                             distanceUnit = distanceUnit,
-                            onSessionClick = ::openSessionDetail,
+                            onSessionClick = { openSessionDetail(it.id) },
                             onCardioSessionClick = ::openCardioSessionDetail,
                         )
                     }
@@ -178,17 +175,10 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
                                     resultCallback = { choice ->
                                         when (choice) {
                                             WorkoutStyleChoice.STRENGTH -> {
-                                                viewModel.viewModelScope.launch {
-                                                    val sessionId = withContext(Dispatchers.IO) {
-                                                        viewModel.createAndInsertNewSession()
-                                                    }
-                                                    openSessionDetail(WorkoutSession(
-                                                        id = sessionId,
-                                                        name = "",
-                                                        date = LocalDate.now(),
-                                                        exercises = emptyList(),
-                                                    ))
-                                                }
+                                                navigateTo(
+                                                    screenFactory = { StrengthStartScreen(it) },
+                                                    resultCallback = ::startStrengthSession,
+                                                )
                                             }
                                             WorkoutStyleChoice.CARDIO -> {
                                                 navigateTo(screenFactory = { CardioWorkoutScreen(it) })
@@ -216,8 +206,22 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeSc
         navigateTo(screenFactory = { SettingsScreen(it) })
     }
 
-    private fun openSessionDetail(session: WorkoutSession) {
-        navigateTo(screenFactory = { SessionDetailScreen(it, session.id) })
+    /** Creates the session the user just configured on [StrengthStartScreen] -- empty, or copied
+     * from a previous one -- and drops them straight into it. */
+    private fun startStrengthSession(choice: StrengthStartChoice) {
+        viewModel.viewModelScope.launch {
+            val sessionId = withContext(Dispatchers.IO) {
+                when (choice) {
+                    StrengthStartChoice.Empty -> viewModel.createAndInsertNewSession()
+                    is StrengthStartChoice.CopyOf -> viewModel.createAndInsertCopyOf(choice.sessionId)
+                }
+            }
+            openSessionDetail(sessionId)
+        }
+    }
+
+    private fun openSessionDetail(sessionId: String) {
+        navigateTo(screenFactory = { SessionDetailScreen(it, sessionId) })
     }
 
     private fun openCardioSessionDetail(session: CardioSession) {

@@ -25,7 +25,6 @@ import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightFullscreenModal
@@ -43,12 +42,13 @@ import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.LoggedWeightExercise
 import com.thelightphone.training.model.MuscleGroup
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
+import com.thelightphone.training.model.SetStatus
 import com.thelightphone.training.model.WeightSet
 import com.thelightphone.training.model.WeightUnit
 import com.thelightphone.training.model.WorkoutSession
+import com.thelightphone.training.model.trainingRepository
 import com.thelightphone.training.model.weightUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,8 +71,9 @@ sealed class SessionDetailMode {
     /** Pick an exercise from the library. */
     data object PickExercise : SessionDetailMode()
 
-    /** Combined weight + reps entry for a new set. */
-    data class AddSet(val exerciseIndex: Int) : SessionDetailMode()
+    /** Combined weight + reps entry for a new set, or to edit an existing one when
+     * [editingSetIndex] is set. Editing preserves [SetStatus] (does not auto-promote). */
+    data class AddSet(val exerciseIndex: Int, val editingSetIndex: Int? = null) : SessionDetailMode()
 
     /** List of exercises with reorder/delete controls. */
     data object ManageExercises : SessionDetailMode()
@@ -137,7 +138,8 @@ class SessionDetailViewModel(
     }
 
     fun startAddSet(exerciseIndex: Int) {
-        val lastSet = _uiState.value.session?.exercises?.getOrNull(exerciseIndex)?.sets?.lastOrNull()
+        val sets = _uiState.value.session?.exercises?.getOrNull(exerciseIndex)?.sets.orEmpty()
+        val lastSet = sets.lastOrNull { it.status == SetStatus.LOGGED } ?: sets.lastOrNull()
         val prefillReps = lastSet?.reps ?: DEFAULT_REPS
         val prefillWeightText = lastSet?.weightKg
             ?.let { formatWeight(_uiState.value.weightUnit.fromKg(it)) } ?: ""
@@ -151,12 +153,28 @@ class SessionDetailViewModel(
         }
     }
 
+    fun startEditSet(exerciseIndex: Int, setIndex: Int) {
+        val set = _uiState.value.session?.exercises?.getOrNull(exerciseIndex)?.sets?.getOrNull(setIndex)
+            ?: return
+        val prefillWeightText = set.weightKg
+            ?.let { formatWeight(_uiState.value.weightUnit.fromKg(it)) } ?: ""
+        _uiState.update {
+            it.copy(
+                mode = SessionDetailMode.AddSet(exerciseIndex, editingSetIndex = setIndex),
+                draftReps = set.reps,
+                draftWeightText = prefillWeightText,
+                addSetSession = it.addSetSession + 1,
+            )
+        }
+    }
+
     fun cancelAddSet() {
         _uiState.update { it.copy(mode = SessionDetailMode.Overview) }
     }
 
     fun submitSet(reps: Int, rawWeight: CharSequence) {
-        val exerciseIndex = (_uiState.value.mode as? SessionDetailMode.AddSet)?.exerciseIndex ?: return
+        val mode = _uiState.value.mode as? SessionDetailMode.AddSet ?: return
+        val exerciseIndex = mode.exerciseIndex
         val trimmed = rawWeight.toString().trim()
         val unit = _uiState.value.weightUnit
         val weightKg: Double? = if (trimmed.isEmpty()) {
@@ -169,16 +187,59 @@ class SessionDetailViewModel(
             }
             unit.toKg(parsed)
         }
-        val newSet = WeightSet(reps = reps, weightKg = weightKg)
         val session = _uiState.value.session ?: return
-        val updatedSession = session.copy(
-            exercises = session.exercises.mapIndexed { index, exercise ->
-                if (index == exerciseIndex) exercise.copy(sets = exercise.sets + newSet) else exercise
-            },
-        )
+        val updatedSession = if (mode.editingSetIndex != null) {
+            val setIndex = mode.editingSetIndex
+            session.copy(
+                exercises = session.exercises.mapIndexed { index, exercise ->
+                    if (index != exerciseIndex) {
+                        exercise
+                    } else {
+                        exercise.copy(
+                            sets = exercise.sets.mapIndexed { i, set ->
+                                if (i == setIndex) {
+                                    // Editing keeps status (suggested stays suggested).
+                                    set.copy(reps = reps, weightKg = weightKg)
+                                } else {
+                                    set
+                                }
+                            },
+                        )
+                    }
+                },
+            )
+        } else {
+            // Manually adding a set mid-workout records what you did -> logged.
+            val newSet = WeightSet(reps = reps, weightKg = weightKg, status = SetStatus.LOGGED)
+            session.copy(
+                exercises = session.exercises.mapIndexed { index, exercise ->
+                    if (index == exerciseIndex) exercise.copy(sets = exercise.sets + newSet) else exercise
+                },
+            )
+        }
         _uiState.update {
             it.copy(session = updatedSession, mode = SessionDetailMode.Overview)
         }
+        persist(updatedSession)
+    }
+
+    /** Promotes a suggested set to logged, preserving weight/reps. */
+    fun confirmSuggestedSet(exerciseIndex: Int, setIndex: Int) {
+        val session = _uiState.value.session ?: return
+        val updatedSession = session.copy(
+            exercises = session.exercises.mapIndexed { index, exercise ->
+                if (index != exerciseIndex) {
+                    exercise
+                } else {
+                    exercise.copy(
+                        sets = exercise.sets.mapIndexed { i, set ->
+                            if (i == setIndex) set.copy(status = SetStatus.LOGGED) else set
+                        },
+                    )
+                }
+            },
+        )
+        _uiState.update { it.copy(session = updatedSession) }
         persist(updatedSession)
     }
 
@@ -329,19 +390,7 @@ class SessionDetailScreen(
     override val viewModelClass: Class<SessionDetailViewModel>
         get() = SessionDetailViewModel::class.java
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     override fun createViewModel(): SessionDetailViewModel =
         SessionDetailViewModel(sessionId, lightContext.dataStore, repository)
@@ -362,7 +411,9 @@ class SessionDetailScreen(
                         state = state,
                         onBack = { goBack(Unit) },
                         onAddSet = viewModel::startAddSet,
+                        onEditSet = viewModel::startEditSet,
                         onDeleteSet = viewModel::deleteSet,
+                        onConfirmSuggestedSet = viewModel::confirmSuggestedSet,
                         onAddExercise = viewModel::startAddExercise,
                         onManageExercises = viewModel::startManageExercises,
                         onScrolledToLatestExercise = viewModel::consumeScrollToLatestExercise,
@@ -435,7 +486,9 @@ private fun SessionOverviewContent(
     state: SessionDetailUiState,
     onBack: () -> Unit,
     onAddSet: (Int) -> Unit,
+    onEditSet: (Int, Int) -> Unit,
     onDeleteSet: (Int, Int) -> Unit,
+    onConfirmSuggestedSet: (Int, Int) -> Unit,
     onAddExercise: () -> Unit,
     onManageExercises: () -> Unit,
     onScrolledToLatestExercise: () -> Unit,
@@ -520,37 +573,60 @@ private fun SessionOverviewContent(
 
                             if (exercise.sets.isEmpty()) {
                                 LightText(
-                                    text = "No sets logged",
+                                    text = "No sets yet",
                                     variant = LightTextVariant.Detail,
                                     lighten = true,
                                 )
                             } else {
-                                exercise.sets.forEachIndexed { setIndex, set ->
-                                    val weightText = set.weightKg?.let { kg ->
-                                        val displayValue = state.weightUnit.fromKg(kg)
-                                        "${formatWeight(displayValue)} ${state.weightUnit.displayName}"
-                                    } ?: "bodyweight"
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        LightText(
-                                            text = "Set ${setIndex + 1}: ${set.reps} reps @ $weightText",
-                                            variant = LightTextVariant.Detail,
-                                            modifier = Modifier.weight(1f),
+                                val loggedSets = exercise.sets.withIndex()
+                                    .filter { it.value.status == SetStatus.LOGGED }
+                                val suggestedSets = exercise.sets.withIndex()
+                                    .filter { it.value.status == SetStatus.SUGGESTED }
+
+                                if (loggedSets.isNotEmpty()) {
+                                    LightText(
+                                        text = "Logged",
+                                        variant = LightTextVariant.Fine,
+                                        lighten = true,
+                                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                                    )
+                                    loggedSets.forEachIndexed { _, (setIndex, set) ->
+                                        SetRow(
+                                            label = setRowLabel(setIndex + 1, set, state.weightUnit),
+                                            muted = false,
+                                            showConfirm = false,
+                                            onEdit = { onEditSet(exerciseIndex, setIndex) },
+                                            onConfirm = {},
+                                            onDelete = { onDeleteSet(exerciseIndex, setIndex) },
                                         )
-                                        LightIcon(
-                                            icon = LightIcons.TRASH,
-                                            size = 2f,
-                                            contentDescription = "Delete set",
-                                            modifier = Modifier.lightClickable(
-                                                onClick = { onDeleteSet(exerciseIndex, setIndex) },
-                                            ),
+                                    }
+                                }
+
+                                if (suggestedSets.isNotEmpty()) {
+                                    LightText(
+                                        text = "Suggested",
+                                        variant = LightTextVariant.Fine,
+                                        lighten = true,
+                                        modifier = Modifier.padding(
+                                            top = if (loggedSets.isNotEmpty()) 10.dp else 4.dp,
+                                            bottom = 2.dp,
+                                        ),
+                                    )
+                                    suggestedSets.forEachIndexed { _, (setIndex, set) ->
+                                        SetRow(
+                                            label = setRowLabel(setIndex + 1, set, state.weightUnit),
+                                            muted = true,
+                                            showConfirm = true,
+                                            onEdit = { onEditSet(exerciseIndex, setIndex) },
+                                            onConfirm = { onConfirmSuggestedSet(exerciseIndex, setIndex) },
+                                            onDelete = { onDeleteSet(exerciseIndex, setIndex) },
                                         )
                                     }
                                 }
                             }
 
+                            val hasSuggestedSets = exercise.sets.any { it.status == SetStatus.SUGGESTED }
+                            val addSetLabel = if (hasSuggestedSets) "Log set" else "Add set"
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -561,10 +637,10 @@ private fun SessionOverviewContent(
                                 LightIcon(
                                     icon = LightIcons.ADD,
                                     size = 2f,
-                                    contentDescription = "Add set",
+                                    contentDescription = addSetLabel,
                                 )
                                 LightText(
-                                    text = "Add set",
+                                    text = addSetLabel,
                                     variant = LightTextVariant.Detail,
                                     lighten = true,
                                     modifier = Modifier.padding(start = 8.dp),
@@ -873,6 +949,57 @@ private fun ConfirmDeleteWorkoutContent(
             ),
         )
     }
+}
+
+
+@Composable
+private fun SetRow(
+    label: String,
+    muted: Boolean,
+    showConfirm: Boolean,
+    onEdit: () -> Unit,
+    onConfirm: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LightText(
+            text = label,
+            variant = LightTextVariant.Detail,
+            lighten = muted,
+            modifier = Modifier
+                .weight(1f)
+                .lightClickable(onClick = onEdit),
+        )
+        if (showConfirm) {
+            LightIcon(
+                icon = LightIcons.ACCEPT,
+                size = 2f,
+                contentDescription = "Accept suggested set",
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .lightClickable(onClick = onConfirm),
+            )
+        }
+        LightIcon(
+            icon = LightIcons.TRASH,
+            size = 2f,
+            contentDescription = "Delete set",
+            modifier = Modifier.lightClickable(onClick = onDelete),
+        )
+    }
+}
+
+private fun setRowLabel(number: Int, set: WeightSet, unit: WeightUnit): String {
+    val weightText = set.weightKg?.let { kg ->
+        val displayValue = unit.fromKg(kg)
+        "${formatWeight(displayValue)} ${unit.displayName}"
+    } ?: "bodyweight"
+    return "Set $number: ${set.reps} reps @ $weightText"
 }
 
 private fun muscleGroupSummary(exercise: LoggedWeightExercise): String {
