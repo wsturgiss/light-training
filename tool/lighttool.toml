@@ -1,8 +1,8 @@
 [tool]
 id = "com.thelightphone.training"
 label = "Training"
-versionCode = 4
-versionName = "0.2.1"
+versionCode = 5
+versionName = "0.2.2"
 permissions = ["android.permission.INTERNET"]
 capabilities = []
 # change if you run this on an LP3!

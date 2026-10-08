@@ -68,10 +68,11 @@ android {
 }
 
 // Where Room drops the schema snapshots enabled by exportSchema = true on TrainingDatabase.
-// Committed, and reviewed on every version bump -- it's the only check on a migration that
-// Light's dependency allowlist permits. Not read at runtime or packaged into the APK.
+// Committed, and reviewed on every version bump. Auto-migrations read them at compile time,
+// and Light's builder only copies src/main/{kotlin,java,res,assets}, so they live in assets
+// (and ship in the APK, a few KB) -- see the note on TrainingDatabase.
 ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.schemaLocation", "$projectDir/src/main/assets/schemas")
 }
 
 kotlin {

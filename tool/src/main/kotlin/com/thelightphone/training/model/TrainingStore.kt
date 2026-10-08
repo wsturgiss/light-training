@@ -8,18 +8,13 @@ import java.io.File
 /**
  * The single place the repository is constructed.
  *
- * Every screen used to open the database itself, each repeating the full migration list, so
- * one screen falling behind that list was a matter of time. The list now lives only in
- * [TrainingDatabase.MIGRATIONS], and screens call this.
+ * Every screen used to open the database itself; screens now call this instead, so there is one
+ * place that knows how the database and export store are built.
  */
 internal fun SealedLightContext.trainingRepository(): TrainingRepository =
     TrainingRepository.getInstance(
         databaseProvider = {
-            buildDatabase(
-                TrainingDatabase::class.java,
-                TrainingRepository.DATABASE_NAME,
-                *TrainingDatabase.MIGRATIONS,
-            )
+            buildDatabase(TrainingDatabase::class.java, TrainingRepository.DATABASE_NAME)
         },
         exportStoreProvider = {
             SessionExportStore(File(filesDir, SessionExportStore.DIRECTORY_NAME))

@@ -140,6 +140,10 @@ internal class SessionExportStore(private val root: File) {
         return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
     }
 
+    // Synchronized because every write of a session goes through the same scratch file name:
+    // two concurrent writers would both write it, the first would move it into place, and the
+    // second's rename would find nothing there.
+    @Synchronized
     private fun write(id: String, fileName: String, body: String, modifiedAt: Long) {
         root.mkdirs()
 

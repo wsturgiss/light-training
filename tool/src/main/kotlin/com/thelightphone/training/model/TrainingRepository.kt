@@ -3,6 +3,8 @@ package com.thelightphone.training.model
 import com.thelightphone.training.backup.SessionExportStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
@@ -66,8 +68,8 @@ class TrainingRepository private constructor(
      * once behind a "migrated" flag. Sessions already up to date are skipped, so the cost is a
      * directory listing plus a timestamp comparison per session.
      */
-    suspend fun syncExports() {
-        if (exportsSynced) return
+    suspend fun syncExports() = exportsSyncLock.withLock {
+        if (exportsSynced) return@withLock
 
         val workouts = listSessions()
         workouts.forEach { session ->
@@ -90,6 +92,9 @@ class TrainingRepository private constructor(
 
     @Volatile
     private var exportsSynced = false
+
+    /** Screens call [ensureSeeded] concurrently on launch; only the first should do the pass. */
+    private val exportsSyncLock = Mutex()
 
     private suspend fun exerciseNamesFor(exerciseIds: List<String>): Map<String, String> =
         exerciseDao.getByIds(exerciseIds.distinct()).associate { it.id to it.name }
@@ -500,9 +505,6 @@ private fun defaultMuscleGroups(): List<MuscleGroup> = listOf(
     MuscleGroup("full_body", "Full Body"),
 )
 
-/** "running"'s tracked fields must stay in sync with [TrainingDatabase.MIGRATION_7_8], which
- * sets the same value for users upgrading from before distance tracking was the default
- * (migrations don't run on a fresh install). */
 private fun defaultExercises(): List<Exercise> = listOf(
     Exercise(
         id = "bench-press",
@@ -529,8 +531,6 @@ private fun defaultExercises(): List<Exercise> = listOf(
     Exercise(id = "jump-rope", name = "Jump Rope", primaryMuscleGroupId = "cardio"),
 )
 
-/** Must stay in sync with [TrainingDatabase.MIGRATION_3_4], which seeds the same rows for
- * users upgrading from before schemes existed (migrations don't run on a fresh install). */
 private fun defaultIntervalSchemes(): List<IntervalScheme> = listOf(
     IntervalScheme(id = "tabata", name = "Tabata", workSeconds = 20, restSeconds = 10, rounds = 8),
     IntervalScheme(id = "nordic-4x4", name = "Nordic 4x4", workSeconds = 240, restSeconds = 180, rounds = 4),
