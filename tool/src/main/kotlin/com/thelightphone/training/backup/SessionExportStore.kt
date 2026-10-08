@@ -1,6 +1,8 @@
 package com.thelightphone.training.backup
 
 import com.thelightphone.training.model.CardioSession
+import com.thelightphone.training.model.LoggedWeightExercise
+import com.thelightphone.training.model.SetStatus
 import com.thelightphone.training.model.WorkoutSession
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -42,13 +44,13 @@ internal class SessionExportStore(private val root: File) {
             date = session.date.toString(),
             loggedAt = isoOrNull(session.createdAt),
             updatedAt = isoOrNull(session.updatedAt),
-            totalSets = session.totalSets,
+            totalSets = session.exercises.sumOf { exercise -> exercise.loggedSets().size },
             exercises = session.exercises.map { exercise ->
                 ExerciseJson(
                     name = exercise.name,
                     muscleGroup = exercise.muscleGroup.name,
                     secondaryMuscleGroups = exercise.secondaryMuscleGroups.map { it.name },
-                    sets = exercise.sets.map { SetJson(reps = it.reps, weightKg = it.weightKg) },
+                    sets = exercise.loggedSets().map { SetJson(reps = it.reps, weightKg = it.weightKg) },
                 )
             },
         )
@@ -256,3 +258,9 @@ private data class CardioJson(
     val distanceKm: Double? = null,
     val pace: String? = null,
 )
+
+/**
+ * Only sets the user actually recorded. SUGGESTED sets are templates copied from an earlier
+ * workout and not yet done -- exporting them would put lifts in the backup that never happened.
+ */
+private fun LoggedWeightExercise.loggedSets() = sets.filter { it.status == SetStatus.LOGGED }

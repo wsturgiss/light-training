@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         IntervalPresetEntity::class,
         CardioSessionEntity::class,
     ],
-    version = 10,
+    version = 11,
     // Writes a JSON snapshot of this schema to tool/schemas/ on every build (see
     // room.schemaLocation in build.gradle.kts). Light's sandbox allows no dependency that can
     // open SQLite off-device -- no androidx.test runner, no androidx.sqlite, no Robolectric --
@@ -192,6 +192,19 @@ abstract class TrainingDatabase : RoomDatabase() {
         }
 
         /**
+         * Adds a status column to exercise_sets so each set can be either LOGGED (actually
+         * recorded) or SUGGESTED (template from a copied workout, awaiting accept). Existing
+         * rows default to LOGGED -- they were already recorded before this distinction existed.
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `exercise_sets` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'LOGGED'",
+                )
+            }
+        }
+
+        /**
          * Adds updated_at (epoch millis) to both session tables, so an edit to an old session
          * can be noticed by the backup exporter -- created_at alone can't distinguish "logged
          * last March" from "logged last March, corrected today".
@@ -203,7 +216,7 @@ abstract class TrainingDatabase : RoomDatabase() {
          * that (an unparseable date) the time of this migration, so the session is at least
          * backed up rather than silently skipped.
          */
-        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 listOf("workout_sessions", "cardio_sessions").forEach { table ->
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `updated_at` INTEGER NOT NULL DEFAULT 0")
@@ -222,9 +235,7 @@ abstract class TrainingDatabase : RoomDatabase() {
 
         /**
          * Every migration, in order. Pass this to `buildDatabase` rather than listing
-         * migrations at the call site: `buildDatabase` applies
-         * `fallbackToDestructiveMigration()`, so a call site that omits one silently *wipes
-         * the user's training history* instead of failing. There is exactly one list, here.
+         * migrations at the call site, so there is exactly one list to keep complete.
          */
         val MIGRATIONS: Array<Migration>
             get() = arrayOf(
@@ -236,6 +247,7 @@ abstract class TrainingDatabase : RoomDatabase() {
                 MIGRATION_7_8,
                 MIGRATION_8_9,
                 MIGRATION_9_10,
+                MIGRATION_10_11,
             )
     }
 }

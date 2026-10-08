@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 10,
-    "identityHash": "0097a5fe38bac1a79a4502567ddbe721",
+    "version": 11,
+    "identityHash": "b159a1d99b113e04515946c768df0c86",
     "entities": [
       {
         "tableName": "muscle_groups",
@@ -153,7 +153,7 @@
       },
       {
         "tableName": "exercise_sets",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `logged_exercise_id` INTEGER NOT NULL, `order_index` INTEGER NOT NULL, `reps` INTEGER NOT NULL, `weight_kg` REAL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `logged_exercise_id` INTEGER NOT NULL, `order_index` INTEGER NOT NULL, `reps` INTEGER NOT NULL, `weight_kg` REAL, `status` TEXT NOT NULL DEFAULT 'LOGGED')",
         "fields": [
           {
             "fieldPath": "id",
@@ -183,6 +183,13 @@
             "fieldPath": "weightKg",
             "columnName": "weight_kg",
             "affinity": "REAL"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LOGGED'"
           }
         ],
         "primaryKey": {
@@ -297,7 +304,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0097a5fe38bac1a79a4502567ddbe721')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b159a1d99b113e04515946c768df0c86')"
     ]
   }
 }

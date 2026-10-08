@@ -287,6 +287,33 @@ class TrainingRepository private constructor(
         exportWorkout(session.id)
     }
 
+    /**
+     * Persists a new session dated [date] that duplicates [sourceId]'s exercises -- same
+     * exercises in the same order, each with the same sets (reps *and* weights) -- so it can be
+     * used as a template and then adjusted. Copied sets are always [SetStatus.SUGGESTED]
+     * (templates until the user accepts them); the source session's set statuses are not
+     * carried over. Returns the new session, or null if [sourceId] no longer exists. The copy
+     * is fully independent: editing either session afterwards leaves the other untouched.
+     */
+    suspend fun copySession(sourceId: String, date: java.time.LocalDate = java.time.LocalDate.now()): WorkoutSession? {
+        val source = getSession(sourceId) ?: return null
+        val copy = source.copy(
+            id = UUID.randomUUID().toString(),
+            name = "Workout $date",
+            date = date,
+            createdAt = System.currentTimeMillis(),
+            exercises = source.exercises.map { exercise ->
+                exercise.copy(
+                    sets = exercise.sets.map { set ->
+                        set.copy(status = SetStatus.SUGGESTED)
+                    },
+                )
+            },
+        )
+        insertSession(copy)
+        return copy
+    }
+
     /** Deletes a session and all its exercises and sets. */
     suspend fun deleteSession(id: String) {
         sessionDao.deleteSetsForSession(id)
@@ -333,7 +360,13 @@ class TrainingRepository private constructor(
                         secondaryMuscleGroups = secondaryGroups,
                         sets = exerciseWithSets.sets
                             .sortedBy { it.orderIndex }
-                            .map { WeightSet(reps = it.reps, weightKg = it.weightKg) },
+                            .map {
+                                WeightSet(
+                                    reps = it.reps,
+                                    weightKg = it.weightKg,
+                                    status = setStatusFromStorage(it.status),
+                                )
+                            },
                     )
                 },
         )
@@ -444,6 +477,7 @@ private fun WorkoutSession.toEntities(): Pair<WorkoutSessionEntity, List<Pair<Lo
                 orderIndex = setIndex,
                 reps = set.reps,
                 weightKg = set.weightKg,
+                status = set.status.name,
             )
         }
         exerciseEntity to setEntities
@@ -502,3 +536,7 @@ private fun defaultIntervalSchemes(): List<IntervalScheme> = listOf(
     IntervalScheme(id = "nordic-4x4", name = "Nordic 4x4", workSeconds = 240, restSeconds = 180, rounds = 4),
     IntervalScheme(id = "hiit-30-30", name = "HIIT 30/30", workSeconds = 30, restSeconds = 30, rounds = 10),
 )
+
+
+private fun setStatusFromStorage(raw: String): SetStatus =
+    SetStatus.entries.firstOrNull { it.name == raw } ?: SetStatus.LOGGED
