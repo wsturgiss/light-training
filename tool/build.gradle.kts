@@ -67,6 +67,13 @@ android {
     }
 }
 
+// Where Room drops the schema snapshots enabled by exportSchema = true on TrainingDatabase.
+// Committed, and reviewed on every version bump -- it's the only check on a migration that
+// Light's dependency allowlist permits. Not read at runtime or packaged into the APK.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(rootProject.ext["jvmTarget"] as String))
@@ -75,6 +82,10 @@ kotlin {
 
 dependencies {
     implementation(project(":sdk:client"))
+    // Declared explicitly rather than leaned on transitively through :sdk:client -- the session
+    // exports in training/backup are serialized here, so this module's own build file should say
+    // so. (The serialization *plugin* above only generates the serializers; this is the runtime.)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test)
     ksp(libs.androidx.room.compiler)
 }

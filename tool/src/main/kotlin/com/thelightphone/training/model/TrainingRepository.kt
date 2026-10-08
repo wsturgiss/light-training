@@ -1,5 +1,6 @@
 package com.thelightphone.training.model
 
+import com.thelightphone.training.backup.SessionExportStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -9,8 +10,15 @@ import java.util.UUID
  * workout sessions. Replaces the previous in-memory
  * [MuscleGroupRepository]/[ExerciseRepository] singletons and
  * `SampleWorkoutData`.
+ *
+ * Every session write is mirrored to [exportStore] as a standalone file, which is what LightOS
+ * actually backs up -- see [SessionExportStore] for why the database itself isn't.
  */
-class TrainingRepository private constructor(database: TrainingDatabase) {
+class TrainingRepository private constructor(
+    database: TrainingDatabase,
+    private val exportStore: SessionExportStore,
+    private val now: () -> Long = { System.currentTimeMillis() },
+) {
     private val muscleGroupDao = database.muscleGroupDao()
     private val exerciseDao = database.exerciseDao()
     private val sessionDao = database.workoutSessionDao()
@@ -44,6 +52,61 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         if (intervalPresetDao.count() == 0) {
             defaultIntervalSchemes().forEach { intervalPresetDao.insert(it.toEntity()) }
         }
+        syncExports()
+    }
+
+    /**
+     * Brings the exported files back in line with the database: writes anything missing or
+     * stale, and drops exports for sessions that no longer exist.
+     *
+     * This is what gets every pre-existing session into the backup -- the export files only
+     * start being written from the version that introduced them, so without a reconciliation
+     * pass a user's entire logged history would be invisible to backups. It also self-heals
+     * after a write that failed partway, so it's worth running on every launch rather than
+     * once behind a "migrated" flag. Sessions already up to date are skipped, so the cost is a
+     * directory listing plus a timestamp comparison per session.
+     */
+    suspend fun syncExports() {
+        if (exportsSynced) return
+
+        val workouts = listSessions()
+        workouts.forEach { session ->
+            if (!exportStore.isUpToDate(session.id, session.updatedAt)) {
+                exportStore.writeWorkout(session)
+            }
+        }
+
+        val cardio = cardioSessionDao.getAll().map { it.toModel() }
+        val names = exerciseNamesFor(cardio.map { it.exerciseId })
+        cardio.forEach { session ->
+            if (!exportStore.isUpToDate(session.id, session.updatedAt)) {
+                exportStore.writeCardio(session, names.nameFor(session.exerciseId))
+            }
+        }
+
+        exportStore.removeAllExcept((workouts.map { it.id } + cardio.map { it.id }).toSet())
+        exportsSynced = true
+    }
+
+    @Volatile
+    private var exportsSynced = false
+
+    private suspend fun exerciseNamesFor(exerciseIds: List<String>): Map<String, String> =
+        exerciseDao.getByIds(exerciseIds.distinct()).associate { it.id to it.name }
+
+    /** Falls back to the raw id so an export is never written with a blank exercise name. */
+    private fun Map<String, String>.nameFor(exerciseId: String): String =
+        this[exerciseId] ?: exerciseId
+
+    /** Re-reads the persisted session so the export reflects what is actually in the database. */
+    private suspend fun exportWorkout(id: String) {
+        getSession(id)?.let { exportStore.writeWorkout(it) }
+    }
+
+    private suspend fun exportCardio(id: String) {
+        val session = cardioSessionDao.getById(id)?.toModel() ?: return
+        val names = exerciseNamesFor(listOf(session.exerciseId))
+        exportStore.writeCardio(session, names.nameFor(session.exerciseId))
     }
 
     // --- Muscle groups ---
@@ -155,6 +218,7 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         pace: String?,
         date: java.time.LocalDate = java.time.LocalDate.now(),
     ): CardioSession {
+        val timestamp = now()
         val session = CardioSession(
             id = UUID.randomUUID().toString(),
             exerciseId = exerciseId,
@@ -162,8 +226,11 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
             durationSeconds = durationSeconds,
             distanceKm = distanceKm,
             pace = pace,
+            createdAt = timestamp,
+            updatedAt = timestamp,
         )
         cardioSessionDao.insert(session.toEntity())
+        exportCardio(session.id)
         return session
     }
 
@@ -180,12 +247,19 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
     ) {
         val existing = cardioSessionDao.getById(id) ?: return
         cardioSessionDao.update(
-            existing.copy(durationSeconds = durationSeconds, distanceKm = distanceKm, pace = pace),
+            existing.copy(
+                durationSeconds = durationSeconds,
+                distanceKm = distanceKm,
+                pace = pace,
+                updatedAt = now(),
+            ),
         )
+        exportCardio(id)
     }
 
     suspend fun deleteCardioSession(id: String) {
         cardioSessionDao.deleteById(id)
+        exportStore.remove(id)
     }
 
     // --- Workout sessions ---
@@ -201,14 +275,16 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
     }
 
     suspend fun insertSession(session: WorkoutSession) {
-        val (sessionEntity, exercisesWithSets) = session.toEntities()
+        val (sessionEntity, exercisesWithSets) = session.copy(updatedAt = now()).toEntities()
         sessionDao.insertFullSession(sessionEntity, exercisesWithSets)
+        exportWorkout(session.id)
     }
 
     /** Replaces an already-persisted session's exercises/sets (e.g. after editing it). */
     suspend fun updateSession(session: WorkoutSession) {
-        val (sessionEntity, exercisesWithSets) = session.toEntities()
+        val (sessionEntity, exercisesWithSets) = session.copy(updatedAt = now()).toEntities()
         sessionDao.replaceFullSession(sessionEntity, exercisesWithSets)
+        exportWorkout(session.id)
     }
 
     /** Deletes a session and all its exercises and sets. */
@@ -216,6 +292,7 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         sessionDao.deleteSetsForSession(id)
         sessionDao.deleteExercisesForSession(id)
         sessionDao.deleteSessionById(id)
+        exportStore.remove(id)
     }
 
     /**
@@ -234,6 +311,7 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
             name = row.session.name,
             date = java.time.LocalDate.parse(row.session.date),
             createdAt = row.session.createdAt,
+            updatedAt = row.session.updatedAt,
             exercises = row.exercises
                 .sortedBy { it.exercise.orderIndex }
                 .map { exerciseWithSets ->
@@ -267,9 +345,14 @@ class TrainingRepository private constructor(database: TrainingDatabase) {
         @Volatile
         private var instance: TrainingRepository? = null
 
-        fun getInstance(databaseProvider: () -> TrainingDatabase): TrainingRepository {
+        /** Internal because [SessionExportStore] is: construct one via `trainingRepository()`. */
+        internal fun getInstance(
+            databaseProvider: () -> TrainingDatabase,
+            exportStoreProvider: () -> SessionExportStore,
+        ): TrainingRepository {
             return instance ?: synchronized(this) {
-                instance ?: TrainingRepository(databaseProvider()).also { instance = it }
+                instance ?: TrainingRepository(databaseProvider(), exportStoreProvider())
+                    .also { instance = it }
             }
         }
     }
@@ -327,6 +410,7 @@ private fun CardioSessionEntity.toModel(): CardioSession = CardioSession(
     distanceKm = distanceKm,
     pace = pace,
     createdAt = createdAt,
+    updatedAt = updatedAt,
 )
 
 private fun CardioSession.toEntity(): CardioSessionEntity = CardioSessionEntity(
@@ -337,6 +421,7 @@ private fun CardioSession.toEntity(): CardioSessionEntity = CardioSessionEntity(
     distanceKm = distanceKm,
     pace = pace,
     createdAt = createdAt,
+    updatedAt = updatedAt,
 )
 
 private fun WorkoutSession.toEntities(): Pair<WorkoutSessionEntity, List<Pair<LoggedWeightExerciseEntity, List<WeightSetEntity>>>> {
@@ -345,6 +430,7 @@ private fun WorkoutSession.toEntities(): Pair<WorkoutSessionEntity, List<Pair<Lo
         name = name,
         date = date.toString(),
         createdAt = createdAt,
+        updatedAt = updatedAt,
     )
     val exercisesWithSets = exercises.mapIndexed { exerciseIndex, exercise ->
         val exerciseEntity = LoggedWeightExerciseEntity(

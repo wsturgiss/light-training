@@ -105,6 +105,9 @@ data class WorkoutSession(
     /** When this session was created, in epoch millis -- used to order same-day sessions by
      * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
     val createdAt: Long = System.currentTimeMillis(),
+    /** When this session was last edited, in epoch millis. Stamped by [TrainingRepository] on
+     * every write; drives backup windowing, not display. */
+    val updatedAt: Long = createdAt,
 ) {
     val muscleGroups: List<MuscleGroup>
         get() = exercises.map { it.muscleGroup }.distinct()
@@ -130,4 +133,7 @@ data class CardioSession(
     /** When this session was created, in epoch millis -- used to order same-day sessions by
      * time instead of arbitrarily (see [TrainingRepository]/HomeScreen's combined feed). */
     val createdAt: Long = System.currentTimeMillis(),
+    /** When this session was last edited, in epoch millis. Stamped by [TrainingRepository] on
+     * every write; drives backup windowing, not display. */
+    val updatedAt: Long = createdAt,
 )

@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightEditableRow
@@ -33,10 +32,10 @@ import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.training.model.CardioSession
 import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.TrackedField
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.distanceUnitFromStorage
+import com.thelightphone.training.model.trainingRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -187,19 +186,7 @@ class CardioSessionDetailScreen(
     override val viewModelClass: Class<CardioSessionDetailViewModel>
         get() = CardioSessionDetailViewModel::class.java
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     override fun createViewModel(): CardioSessionDetailViewModel =
         CardioSessionDetailViewModel(sessionId, lightContext.dataStore, repository)

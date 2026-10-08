@@ -25,7 +25,6 @@ import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightFullscreenModal
@@ -43,12 +42,12 @@ import com.thelightphone.sdk.ui.lightClickable
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.LoggedWeightExercise
 import com.thelightphone.training.model.MuscleGroup
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WeightSet
 import com.thelightphone.training.model.WeightUnit
 import com.thelightphone.training.model.WorkoutSession
+import com.thelightphone.training.model.trainingRepository
 import com.thelightphone.training.model.weightUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -329,19 +328,7 @@ class SessionDetailScreen(
     override val viewModelClass: Class<SessionDetailViewModel>
         get() = SessionDetailViewModel::class.java
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     override fun createViewModel(): SessionDetailViewModel =
         SessionDetailViewModel(sessionId, lightContext.dataStore, repository)

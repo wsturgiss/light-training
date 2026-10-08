@@ -40,17 +40,16 @@ import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.lightClickable
-import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.training.model.DistanceUnit
 import com.thelightphone.training.model.Exercise
 import com.thelightphone.training.model.IntervalScheme
 import com.thelightphone.training.model.MuscleGroup
 import com.thelightphone.training.model.TrackedField
-import com.thelightphone.training.model.TrainingDatabase
 import com.thelightphone.training.model.TrainingPreferences
 import com.thelightphone.training.model.TrainingRepository
 import com.thelightphone.training.model.WeightUnit
 import com.thelightphone.training.model.distanceUnitFromStorage
+import com.thelightphone.training.model.trainingRepository
 import com.thelightphone.training.model.weightUnitFromStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -659,19 +658,7 @@ class SettingsScreen(
     override val viewModelClass: Class<SettingsViewModel>
         get() = SettingsViewModel::class.java
 
-    private val repository = TrainingRepository.getInstance {
-        lightContext.buildDatabase(
-            TrainingDatabase::class.java,
-            TrainingRepository.DATABASE_NAME,
-            TrainingDatabase.MIGRATION_2_3,
-            TrainingDatabase.MIGRATION_3_4,
-            TrainingDatabase.MIGRATION_4_5,
-            TrainingDatabase.MIGRATION_5_6,
-            TrainingDatabase.MIGRATION_6_7,
-            TrainingDatabase.MIGRATION_7_8,
-            TrainingDatabase.MIGRATION_8_9,
-        )
-    }
+    private val repository = lightContext.trainingRepository()
 
     override fun createViewModel(): SettingsViewModel = SettingsViewModel(lightContext.dataStore, repository)
 

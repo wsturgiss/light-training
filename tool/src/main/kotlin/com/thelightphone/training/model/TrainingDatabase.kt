@@ -15,8 +15,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         IntervalPresetEntity::class,
         CardioSessionEntity::class,
     ],
-    version = 9,
-    exportSchema = false,
+    version = 10,
+    // Writes a JSON snapshot of this schema to tool/schemas/ on every build (see
+    // room.schemaLocation in build.gradle.kts). Light's sandbox allows no dependency that can
+    // open SQLite off-device -- no androidx.test runner, no androidx.sqlite, no Robolectric --
+    // so Room migrations cannot be tested here. The snapshots are the next best thing: they
+    // make the schema Room *expects* a committed file, so bumping the version produces a diff
+    // showing exactly what a migration has to produce.
+    exportSchema = true,
 )
 abstract class TrainingDatabase : RoomDatabase() {
     internal abstract fun muscleGroupDao(): MuscleGroupDao
@@ -184,5 +190,52 @@ abstract class TrainingDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `cardio_sessions_new` RENAME TO `cardio_sessions`")
             }
         }
+
+        /**
+         * Adds updated_at (epoch millis) to both session tables, so an edit to an old session
+         * can be noticed by the backup exporter -- created_at alone can't distinguish "logged
+         * last March" from "logged last March, corrected today".
+         *
+         * Existing rows are backfilled rather than left at 0, because a session whose
+         * updated_at is 0 would be bucketed into a 1970 backup window and, in practice, never
+         * reached. In order of preference: the row's created_at; failing that (rows predating
+         * [MIGRATION_6_7], which have created_at = 0) midnight UTC on its logged date; failing
+         * that (an unparseable date) the time of this migration, so the session is at least
+         * backed up rather than silently skipped.
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                listOf("workout_sessions", "cardio_sessions").forEach { table ->
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `updated_at` INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL(
+                        """
+                        UPDATE `$table` SET `updated_at` = CASE
+                            WHEN `created_at` > 0 THEN `created_at`
+                            WHEN strftime('%s', `date`) IS NOT NULL THEN strftime('%s', `date`) * 1000
+                            ELSE strftime('%s', 'now') * 1000
+                        END
+                        """.trimIndent(),
+                    )
+                }
+            }
+        }
+
+        /**
+         * Every migration, in order. Pass this to `buildDatabase` rather than listing
+         * migrations at the call site: `buildDatabase` applies
+         * `fallbackToDestructiveMigration()`, so a call site that omits one silently *wipes
+         * the user's training history* instead of failing. There is exactly one list, here.
+         */
+        val MIGRATIONS: Array<Migration>
+            get() = arrayOf(
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+                MIGRATION_8_9,
+                MIGRATION_9_10,
+            )
     }
 }
