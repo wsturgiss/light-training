@@ -1,5 +1,28 @@
 # light-training
 
+## First-launch crash: `ensureSeeded()` raced itself (branch `fix/seed-race`, 2026-10-11)
+- **Bug:** on a fresh install (or after Clear data) the tool crashed on first launch with
+  `SQLiteConstraintException: UNIQUE constraint failed: muscle_groups.id`. `ensureSeeded()` is
+  check-then-insert ("table empty? insert the defaults"), and screens call it concurrently:
+  `HomeScreen.reloadSessions()` runs from both `init` and `onScreenShow`. Both callers counted 0
+  rows, both inserted, and the defaults' fixed ids (`tabata`, ...) failed the second insert.
+- **Worse than a crash:** it left the defaults half seeded (6–11 muscle groups, no exercises),
+  and since seeding only fills *empty* tables, they'd never be completed.
+- **How it was found:** running the tool in light-web (the browser build) on Room 3, where the
+  old hand-written database had been hiding it.
+- [x] Fix: `ensureSeeded()` runs under a `Mutex` (`seedLock`), like `syncExports()` already did
+      (`8105fd0`). Compiles; unit tests pass.
+- [x] Verified on the LP3: 5 fresh starts from cleared data. Without the fix, 5 of 5 crashed;
+      with it, 0 of 5, and the defaults came out complete (12 muscle groups, 8 exercises,
+      3 interval presets, no duplicates). Real data afterwards was restored byte-identical.
+- [ ] Merge `fix/seed-race` into `main`.
+- Phone data backups taken for the test (`adb exec-out run-as com.thelightphone.training tar cf - .`),
+  in `~/Projects/light-training-backups/`. To restore one:
+  `adb shell am force-stop com.thelightphone.training && adb shell pm clear com.thelightphone.training && adb exec-in run-as com.thelightphone.training tar xf - < <file>.tar`
+- Related: light-web's `room3` branch builds from this checkout, so until this is merged keep
+  `~/Projects/light-training` on `fix/seed-race`, or Training crashes in the browser again (see
+  light-web's `docs/HANDOFF.md`, "Found in tools").
+
 ## Suggested vs logged strength sets
 - [x] `SetStatus` (LOGGED | SUGGESTED) on `WeightSet` + Room `exercise_sets.status` column;
       `MIGRATION_9_10` (default existing rows to LOGGED); version 10; all `buildDatabase` call
