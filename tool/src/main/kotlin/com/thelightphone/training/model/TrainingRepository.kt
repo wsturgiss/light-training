@@ -43,8 +43,11 @@ class TrainingRepository private constructor(
      * Seeds the default muscle groups/exercises the first time the app runs. Once either
      * table has any rows, this is a no-op forever after -- edits and deletions are left
      * entirely to the user, including newly-added defaults from a later app update.
+     *
+     * Locked because screens call this concurrently on launch: without it two callers can both
+     * count zero rows and both insert the defaults, whose fixed ids then fail the second insert.
      */
-    suspend fun ensureSeeded() {
+    suspend fun ensureSeeded() = seedLock.withLock {
         if (muscleGroupDao.count() == 0) {
             defaultMuscleGroups().forEach { muscleGroupDao.insert(it.toEntity()) }
         }
@@ -95,6 +98,9 @@ class TrainingRepository private constructor(
 
     /** Screens call [ensureSeeded] concurrently on launch; only the first should do the pass. */
     private val exportsSyncLock = Mutex()
+
+    /** Serialises [ensureSeeded]'s check-then-insert. */
+    private val seedLock = Mutex()
 
     private suspend fun exerciseNamesFor(exerciseIds: List<String>): Map<String, String> =
         exerciseDao.getByIds(exerciseIds.distinct()).associate { it.id to it.name }
