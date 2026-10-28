@@ -18,7 +18,7 @@ class LightSdkPlugin : Plugin<Project> {
         val ALLOWED_DEPENDENCIES: Set<String> = readResourceLines("allowed-dependencies.txt").toSet()
         val SDK_VERSION: String = readResourceLines("sdk-version.txt").single()
 
-        private fun readResourceLines(name: String): List<String> {
+        internal fun readResourceLines(name: String): List<String> {
             val stream = LightSdkPlugin::class.java.getResourceAsStream(name)
                 ?: error("Light SDK plugin resource missing: $name")
             return stream.bufferedReader().useLines { lines ->
@@ -289,14 +289,23 @@ class LightSdkPlugin : Plugin<Project> {
      * scheme so the artifact comes out unsigned and ready for the signing
      * service to apply the per-tool key. Locally devs run without the flag
      * and the dev keystore signs as normal.
+     *
+     * `-DlightSdk.allowAltServerPackage=true` lets `tool.serverPackage` be
+     * something other than com.lightos, e.g. the emulator package. The
+     * builder never passes it.
      */
     private fun applyToolMetadata(project: Project) {
         val tomlFile = File(project.projectDir, LightToolMetadata.FILE_NAME)
+        val allowAltServerPackage = System.getProperty("lightSdk.allowAltServerPackage") == "true"
         val metadata = try {
-            LightToolMetadata.parse(tomlFile)
+            LightToolMetadata.parse(tomlFile, allowAltServerPackage)
         } catch (e: LightToolMetadataException) {
             throw GradleException("Light SDK: ${e.message}")
         }
+
+        metadata.capabilities
+            .flatMap { LightToolPolicy.CAPABILITY_IMPLIED_DEPENDENCIES[it].orEmpty() }
+            .forEach { project.dependencies.add("implementation", it) }
 
         // Generated manifest path. Anchored under build/ so a clean rebuild
         // always regenerates from current metadata.
