@@ -5,6 +5,7 @@ versionCode = 5
 versionName = "0.2.2"
 permissions = ["android.permission.INTERNET"]
 capabilities = []
-# change if you run this on an LP3!
-# serverPackage = "com.lightos"
-serverPackage = "com.thelightphone.sdk.emulator"
+orientation = "portrait"
+# emulator: swap these lines and build with -DlightSdk.allowAltServerPackage=true
+# serverPackage = "com.thelightphone.sdk.emulator"
+serverPackage = "com.lightos"
